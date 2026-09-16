@@ -7,8 +7,10 @@ Metoda: https://www.brisk.org.uk/photog/d3readn.html
 ## Układ katalogów
 
 ```
-frames/<kamera>/      klatki dark (FITS; dla DSLR także RAW + skrypt konwersji Siril)
-stats/<kamera>.csv    statystyki z frames2stats.py
+frames/<kamera>/          klatki dark w FITS (kamery astro zapisują tu bezpośrednio)
+frames/<kamera>/raw/      DSLR: pliki RAW (NEF itp.), mogą być w podkatalogach
+frames/<kamera>/fits/     DSLR: FITS wygenerowane przez raw2fits.sh
+stats/<kamera>.csv        statystyki z frames2stats.py
 ```
 
 Nazwa `<kamera>` jest kluczem w całym potoku: katalog klatek, plik CSV,
@@ -17,6 +19,10 @@ Nazwa `<kamera>` jest kluczem w całym potoku: katalog klatek, plik CSV,
 ## Potok
 
 ```
+frames/<kamera>/raw/**/*.nef  (DSLR)
+  │  ./gphoto2_take.sh          zdjęcia przez USB (opcjonalnie)
+  │  ./raw2fits.sh <kamera>     RAW → FITS (Siril)
+  ▼
 frames/<kamera>/**/*.fit[s]   (pary klatek dla każdego ISO × ekspozycja)
   │  ./frames2stats.py <kamera>
   ▼
@@ -33,8 +39,14 @@ sensor_models.m               wklej wydrukowaną strukturę jako nowy `case`
 
 1. Zrób pary klatek dark dla każdej kombinacji ISO/gain × czas ekspozycji
    (min. 2 klatki na kombinację, kilka czasów od bardzo krótkiego do długiego).
-2. Wrzuć je do `frames/<kamera>/` (mogą być w podkatalogach – skrypt szuka rekurencyjnie).
-   Dla DSLR najpierw skonwertuj RAW → FITS (patrz `frames/Nikon-D5100/build.sh`, Siril).
+   DSLR przez USB: ustaw `ISOS`/`TIMES` w `gphoto2_take.sh` i odpal `./gphoto2_take.sh`
+   – zapisze `frames/<kamera>/raw/dark_iso<ISO>_<czas>_<n>.nef`, np. `dark_iso800_0-01s_2.nef`
+   (czas w sekundach, kropka zamieniona na `-`; nazwa kamery z `gphoto2 --auto-detect`).
+2. Kamera astro: wrzuć FITS do `frames/<kamera>/` (mogą być w podkatalogach – skrypt szuka rekurencyjnie).
+   DSLR: RAW do `frames/<kamera>/raw/` i skonwertuj:
+   ```sh
+   ./raw2fits.sh <kamera>            # → frames/<kamera>/fits/
+   ```
 3. Policz statystyki:
    ```sh
    ./frames2stats.py <kamera>        # → stats/<kamera>.csv
@@ -48,10 +60,22 @@ sensor_models.m               wklej wydrukowaną strukturę jako nowy `case`
 
 ## Skrypty
 
+### gphoto2_take.sh
+Wykrywa jedyną podłączoną kamerę (`gphoto2 --auto-detect`), ustawia RAW i dla każdej kombinacji
+`ISOS` × `TIMES` robi `FRAMES` (domyślnie 2) klatek do `frames/<kamera>/raw/`.
+Wartości `TIMES` w formacie zgłaszanym przez `gphoto2 --get-config capturesettings/shutterspeed`.
+
+### raw2fits.sh <kamera>
+Znajduje wszystkie katalogi z RAW pod `frames/<kamera>/raw/` i konwertuje je Sirilem (bez debayeru,
+32 bit) do `frames/<kamera>/fits/<katalog>_NNNNN.fit`. Nagłówki `ISOSPEED`/`EXPTIME` są zachowane.
+Katalog `fits/` jest czyszczony przed konwersją.
+
 ### frames2stats.py <kamera>
 Grupuje pliki FITS z `frames/<kamera>/` po (ISO, EXPTIME), dla każdej grupy bierze dwie pierwsze klatki i liczy
 z centralnego okna 4096×4096 px (lub mniejszego, gdy klatka jest mniejsza):
 `average` = średnia, `sigma` = std(klatka1 − klatka2)/√2.
+Piksele odstające o więcej niż 8 robustnych sigm (MAD) w którejkolwiek klatce są pomijane
+(uszkodzone bloki w NEF, gorące piksele); odsetek zamaskowanych pikseli jest wypisywany na stderr.
 Zapisuje `stats/<kamera>.csv` (rozdzielany `;`).
 
 ### sensor_characterize(name)
