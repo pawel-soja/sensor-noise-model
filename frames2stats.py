@@ -2,23 +2,29 @@
 
 # https://www.brisk.org.uk/photog/d3readn.html
 #
-# Usage: ./frames2stats.py <camera>
+# Usage: ./frames2stats.py [--win N] [--clip S] <camera>
 #   reads  frames/<camera>/**/*.fit[s]
 #   writes stats/<camera>.csv  (ISO;shutter;average;sigma)
+#
+#   --win N   use only the central N x N px (default: whole frame)
+#   --clip S  ignore pixels further than S robust sigmas (MAD) from the median in either
+#             frame - only for corrupt data (e.g. D5100 blocks of value 4128), it biases
+#             sigma low on heavy-tailed noise (default: off)
 
 import os
 import sys
 import glob
 import math
+import argparse
 from astropy.io import fits
 from astropy.stats import sigma_clip
 import numpy as np
 
 GAIN_KEYS = ['ISOSPEED', 'GAIN']  # DSLR, astro camera
-WIN = 1024 * 4                    # central crop size [px], clamped to frame size
-CLIP = 8                          # reject pixels beyond CLIP * robust sigma (corrupt blocks, e.g. D5100 value 4128)
 
-def crop(array, boxSize = 2):
+def crop(array, boxSize):
+    if not boxSize:
+        return array
     s = min(boxSize, min(array.shape)) // 2
     h = array.shape[0] // 2
     w = array.shape[1] // 2
@@ -31,10 +37,13 @@ def read_gain(header):
             return int(header[key])
     raise KeyError("none of %s found in FITS header" % GAIN_KEYS)
 
-if len(sys.argv) != 2:
-    sys.exit("usage: %s <camera>" % sys.argv[0])
+ap = argparse.ArgumentParser()
+ap.add_argument('camera')
+ap.add_argument('--win', type=int, default=0, metavar='N', help='central crop size [px], 0 = whole frame')
+ap.add_argument('--clip', type=float, default=0, metavar='S', help='reject pixels beyond S robust sigmas, 0 = off')
+args = ap.parse_args()
 
-camera = sys.argv[1]
+camera = args.camera
 frames_dir = os.path.join('frames', camera)
 stats_file = os.path.join('stats', camera + '.csv')
 
@@ -65,18 +74,23 @@ with open(stats_file, 'w') as out:
                 print("skip ISO %d EXP %g: need 2 frames, got %d" % (iso, exp, len(file)), file=sys.stderr)
                 continue
 
-            fit1 = crop(fits.getdata(file[0]).astype(float), WIN)
-            fit2 = crop(fits.getdata(file[1]).astype(float), WIN)
+            fit1 = crop(fits.getdata(file[0]).astype(float), args.win)
+            fit2 = crop(fits.getdata(file[1]).astype(float), args.win)
 
-            bad = sigma_clip(fit1, sigma=CLIP, stdfunc='mad_std', maxiters=5).mask | \
-                  sigma_clip(fit2, sigma=CLIP, stdfunc='mad_std', maxiters=5).mask
+            if args.clip:
+                bad = sigma_clip(fit1, sigma=args.clip, stdfunc='mad_std', maxiters=5).mask | \
+                      sigma_clip(fit2, sigma=args.clip, stdfunc='mad_std', maxiters=5).mask
+                info = "  masked %d px (%.3f%%)" % (bad.sum(), 100.0 * bad.sum() / bad.size)
+            else:
+                bad = np.zeros(fit1.shape, dtype=bool)
+                info = ""
             good = ~bad
 
             mean = (np.mean(fit1[good]) + np.mean(fit2[good])) / 2
 
             dsigma = np.std((fit1 - fit2)[good]) / math.sqrt(2)
 
-            print("%s  masked %d px (%.3f%%)" % (file[0], bad.sum(), 100.0 * bad.sum() / bad.size), file=sys.stderr)
+            print("%s%s" % (file[0], info), file=sys.stderr)
             out.write("%f;%f;%f;%f\n" % (iso, exp, mean, dsigma))
 
 print("written %s" % stats_file, file=sys.stderr)
