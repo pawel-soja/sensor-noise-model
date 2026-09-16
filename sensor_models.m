@@ -12,9 +12,9 @@ function camera = sensor_models(name)
             camera.iso = [ 100 133.352 177.828 237.137 251.189 266.073 281.838 298.538 316.228 562.341 1000 1778.28 3162.28 5623.41 10000 17782.8 ];
             camera.iso2egain = @(iso) 0.015119 * iso + 5.92291; # DN/e-
 
-        case "Nikon-D5100"
+        case "Nikon_D5100"
             camera = {};
-            camera.name = "Nikon-D5100";
+            camera.name = "Nikon_D5100";
             camera.egain2read_noise = @(egain) 2.08105 * egain + 0.572391; # DN
             camera.dark_current = 0.443848; # e-/s/pix
             camera.bias = 128; # DN
