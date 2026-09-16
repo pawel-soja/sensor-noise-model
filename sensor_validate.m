@@ -1,4 +1,4 @@
-function sensor_validate(name = "Nikon-D5100")
+function sensor_validate(name = "Nikon_D5100")
     % Round-trip check: model -> synthetic stats -> fit -> plot
     camera = sensor_models(name);
 
