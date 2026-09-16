@@ -11,10 +11,12 @@ import sys
 import glob
 import math
 from astropy.io import fits
+from astropy.stats import sigma_clip
 import numpy as np
 
 GAIN_KEYS = ['ISOSPEED', 'GAIN']  # DSLR, astro camera
 WIN = 1024 * 4                    # central crop size [px], clamped to frame size
+CLIP = 8                          # reject pixels beyond CLIP * robust sigma (corrupt blocks, e.g. D5100 value 4128)
 
 def crop(array, boxSize = 2):
     s = min(boxSize, min(array.shape)) // 2
@@ -63,14 +65,18 @@ with open(stats_file, 'w') as out:
                 print("skip ISO %d EXP %g: need 2 frames, got %d" % (iso, exp, len(file)), file=sys.stderr)
                 continue
 
-            fit1 = fits.getdata(file[0]).astype(float)
-            fit2 = fits.getdata(file[1]).astype(float)
+            fit1 = crop(fits.getdata(file[0]).astype(float), WIN)
+            fit2 = crop(fits.getdata(file[1]).astype(float), WIN)
 
-            mean = (np.mean(crop(fit1, WIN)) + np.mean(crop(fit2, WIN))) / 2
+            bad = sigma_clip(fit1, sigma=CLIP, stdfunc='mad_std', maxiters=5).mask | \
+                  sigma_clip(fit2, sigma=CLIP, stdfunc='mad_std', maxiters=5).mask
+            good = ~bad
 
-            dsigma = np.std(crop(fit1 - fit2, WIN)) / math.sqrt(2)
+            mean = (np.mean(fit1[good]) + np.mean(fit2[good])) / 2
 
-            print("%s" % file[0], file=sys.stderr)
+            dsigma = np.std((fit1 - fit2)[good]) / math.sqrt(2)
+
+            print("%s  masked %d px (%.3f%%)" % (file[0], bad.sum(), 100.0 * bad.sum() / bad.size), file=sys.stderr)
             out.write("%f;%f;%f;%f\n" % (iso, exp, mean, dsigma))
 
 print("written %s" % stats_file, file=sys.stderr)
