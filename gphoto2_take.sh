@@ -3,9 +3,17 @@
 # Output: frames/<camera>/raw/dark_iso<ISO>_<shutter>_<n>.nef
 set -euo pipefail
 
-ISOS=(100 800 1600 6400 25600)
-TIMES=("0,0100s" "1,0000s" "4,0000s")   # as reported by: gphoto2 --get-config capturesettings/shutterspeed
+ISOS=(100 200 400 800 1600 6400 25600)
+TIMES=("0,0100s" "1,0000s" "2,0000s" "4,0000s" "8,0000s")   # as reported by: gphoto2 --get-config capturesettings/shutterspeed
 FRAMES=2                                 # frames2stats.py needs 2 per combination
+SLEEP=1                                  # pause between frames [s]
+
+# exposure + pause per frame, summed over all combinations (excludes download time)
+TOTAL=$(printf '%s\n' "${TIMES[@]}" | tr , . | awk -v n="${#ISOS[@]}" -v f="$FRAMES" -v p="$SLEEP" \
+        '{ s += ($1 + p) } END { printf "%d", n * f * s }')
+printf 'Frames: %d, estimated time: %dm %02ds\n' $(( ${#ISOS[@]} * ${#TIMES[@]} * FRAMES )) $(( TOTAL / 60 )) $(( TOTAL % 60 ))
+read -rp 'Continue? [y/N] ' answer
+[[ $answer == [yY] ]] || exit 0
 
 mapfile -t CAMERAS < <(gphoto2 --auto-detect | grep 'usb:')
 
@@ -34,7 +42,7 @@ for iso in "${ISOS[@]}"; do
       fname="$OUT/dark_iso${iso}_${label}_${n}.nef"
       echo "Capturing ISO=$iso shutter=$t frame=$n"
       gphoto2 --port "$PORT" --capture-image-and-download --filename "$fname"
-      sleep 1
+      sleep "$SLEEP"
     done
   done
 done
