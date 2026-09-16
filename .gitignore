@@ -1,5 +1,7 @@
 *.fits
 *.fit
 *.NEF
+*.nef
 *.ssf
 *.seq
+*_conversion.txt
