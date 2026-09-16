@@ -3,28 +3,31 @@ function sensor_plot(analysis)
 
     # Debug - Input data
     if true
-        figure(1, 'name', 'Debug - Input data'); clf;
+        figure(1, 'name', [p.name ' - Debug - Input data']); clf;
 
         subplot(221);
         plot_fit(p.shutter, p.average, p.shutter2average);
         xlabel('Shutter [s]');
         ylabel('Average - Bias [DN]');
+        title('Dark signal vs exposure (linear fit)');
         legend(num2str(round(p.iso')));
 
         subplot(222);
         plot(p.shutter, p.sigma, '-+');
         xlabel('Shutter [s]');
         ylabel('Sigma [DN]');
+        title('Noise vs exposure');
         legend(num2str(round(p.iso')));
 
         subplot(212);
         plot_fit(p.average, p.sigma2, p.average2sigma2);
         xlabel('Average - Bias [DN]');
         ylabel('Sigma^2 [DN^2]');
+        title('Photon transfer: slope = egain [DN/e-], intercept = read noise^2');
         legend(num2str(round(p.iso')));
     end
 
-    figure(2, 'name', 'Sensor model'); clf;
+    figure(2, 'name', [p.name ' - Sensor model']); clf;
     subplot(321);
     [ax h1 h2] = plotyy(p.iso, p.egain, p.iso, p.read_noise);
     set ([h1, h2], "linestyle", "-");
@@ -32,7 +35,7 @@ function sensor_plot(analysis)
     ylabel(ax(1), 'Egain [DN/e-]');
     ylabel(ax(2), 'Read Noise [DN]');
     xlabel('ISO');
-    title(sprintf("f(x) = %g * x + %g", p.iso2egain(1), p.iso2egain(2)));
+    title(sprintf("Egain vs ISO: f(x) = %g * x + %g", p.iso2egain(1), p.iso2egain(2)));
     grid on;
     hold on;
 
@@ -43,6 +46,7 @@ function sensor_plot(analysis)
     ylabel(ax(1), 'Egain [e-/DN]');
     ylabel(ax(2), 'Read Noise [e-]');
     xlabel('ISO');
+    title('Gain and read noise in electrons');
     grid on;
 
     subplot(312);
@@ -52,11 +56,14 @@ function sensor_plot(analysis)
     ylabel(ax(2), 'Read Noise [e-]');
     set ([h1, h2], "linestyle", "-");
     set ([h1, h2], "marker", "+");
-    title(sprintf('f(x) = %gx + %g', p.egain2read_noise(1), p.egain2read_noise(2)));
+    title(sprintf('Read noise vs egain: f(x) = %gx + %g', p.egain2read_noise(1), p.egain2read_noise(2)));
     grid on;
 
     subplot(325);
     plot(p.shutter, p.average ./ p.egain', '-+');
+    xlabel('Shutter [s]');
+    ylabel('Dark signal [e-]');
+    title(sprintf('Dark current: %.3g e-/s/pix', p.dark_current));
     legend(num2str(round(p.iso')));
 
     subplot(326);
@@ -81,6 +88,10 @@ function sensor_plot(analysis)
     SNR = L ./ M;
 
     plot(iso, 10*log(SNR));
+    xlabel('ISO');
+    ylabel('SNR [dB]');
+    title(sprintf('SNR vs ISO (%g s, %g e-/s)', exposure, photons));
+    grid on;
 end
 
 function plot_fit(x, y, coeff)
