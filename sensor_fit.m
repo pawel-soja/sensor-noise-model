@@ -42,22 +42,23 @@ function out = sensor_fit(data)
     # Like DSLR - ISO
     as_linear = {};
     as_linear.x = ISO;
-    [as_linear.x2y as_linear.s] = polyfit(as_linear.x, out.egain, 1);
 
     # Like Astrocam - Gain (0.1 dB)
     as_log = {};
     as_log.x = 10 .^ (ISO / 200) * 100;
-    [as_log.x2y as_log.s] = polyfit(as_log.x, out.egain, 1);
+
+    # select model on x normalised to [0,1]: DSLR ISO as gain gives 10^32, singular fit
+    [~, as_linear.s] = polyfit(as_linear.x / max(as_linear.x), out.egain, 1);
+    [~, as_log.s]    = polyfit(as_log.x / max(as_log.x), out.egain, 1);
 
     if as_linear.s.normr < as_log.s.normr
         out.iso = as_linear.x;
-        out.iso2egain = as_linear.x2y;
         out.has_iso = true;
     else
         out.iso = as_log.x;
-        out.iso2egain = as_log.x2y;
         out.has_iso = false;
     end
+    out.iso2egain = polyfit(out.iso, out.egain, 1);
 
     out.egain2iso   = polyfit_cols(out.egain, out.iso', 1);
 
