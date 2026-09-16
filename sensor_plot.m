@@ -4,30 +4,29 @@ function sensor_plot(analysis)
     # Debug - Input data
     if true
         figure(1, 'name', [p.name ' - Debug - Input data']); clf;
+        colormap(iso_colormap());
 
         subplot(221);
-        plot_fit(p.shutter, p.average, p.shutter2average);
+        plot_iso(p.shutter, p.average, p.iso, p.shutter2average);
         xlabel('Shutter [s]');
         ylabel('Average - Bias [DN]');
         title('Dark signal vs exposure (linear fit)');
-        legend(num2str(round(p.iso')));
 
         subplot(222);
-        plot(p.shutter, p.sigma, '-+');
+        plot_iso(p.shutter, p.sigma, p.iso);
         xlabel('Shutter [s]');
         ylabel('Sigma [DN]');
         title('Noise vs exposure');
-        legend(num2str(round(p.iso')));
 
         subplot(212);
-        plot_fit(p.average, p.sigma2, p.average2sigma2);
+        plot_iso(p.average, p.sigma2, p.iso, p.average2sigma2);
         xlabel('Average - Bias [DN]');
         ylabel('Sigma^2 [DN^2]');
         title('Photon transfer: slope = egain [DN/e-], intercept = read noise^2');
-        legend(num2str(round(p.iso')));
     end
 
     figure(2, 'name', [p.name ' - Sensor model']); clf;
+    colormap(iso_colormap());
     subplot(321);
     [ax h1 h2] = plotyy(p.iso, p.egain, p.iso, p.read_noise);
     set ([h1, h2], "linestyle", "-");
@@ -60,11 +59,10 @@ function sensor_plot(analysis)
     grid on;
 
     subplot(325);
-    plot(p.shutter, p.average ./ p.egain', '-+');
+    plot_iso(p.shutter, p.average ./ p.egain', p.iso);
     xlabel('Shutter [s]');
     ylabel('Dark signal [e-]');
     title(sprintf('Dark current: %.3g e-/s/pix', p.dark_current));
-    legend(num2str(round(p.iso')));
 
     subplot(326);
 
@@ -94,10 +92,36 @@ function sensor_plot(analysis)
     grid on;
 end
 
-function plot_fit(x, y, coeff)
-    plot(x, y, '+');
+function cmap = iso_colormap()
+    cmap = jet(64);
+end
+
+# One line per ISO coloured by log(ISO) (blue = lowest, red = highest), colorbar instead of legend.
+# With coeff: '+' data plus fitted line, otherwise '-+'.
+function plot_iso(x, y, iso, coeff)
+    cmap = iso_colormap();
+    liso = log10(iso);
+    clim = [min(liso) max(liso)];
+    if diff(clim) == 0
+        clim += [-0.5 0.5];
+    end
+    idx = 1 + round((liso - clim(1)) / diff(clim) * (rows(cmap) - 1));
+
     hold on;
-    set(gca,'ColorOrderIndex',1);
-    plot(x, x .* coeff(1, :) + coeff(2, :));
+    for i = 1:numel(iso)
+        c = cmap(idx(i), :);
+        if nargin < 4
+            plot(x(:, i), y(:, i), '-+', 'color', c);
+        else
+            plot(x(:, i), y(:, i), '+', 'color', c);
+            plot(x(:, i), x(:, i) .* coeff(1, i) + coeff(2, i), '-', 'color', c);
+        end
+    end
     hold off;
+
+    caxis(clim);
+    cb = colorbar();
+    ticks = unique(round(iso(round(linspace(1, numel(iso), min(numel(iso), 6))))));
+    set(cb, 'ytick', log10(ticks), 'yticklabel', num2str(ticks'));
+    ylabel(cb, 'ISO');
 end
