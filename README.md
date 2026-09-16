@@ -52,6 +52,8 @@ sensor_models.m               wklej wydrukowaną strukturę jako nowy `case`
    ./frames2stats.py <kamera>        # → stats/<kamera>.csv
    ```
    Gain czytany jest z nagłówka `ISOSPEED` (DSLR) lub `GAIN` (kamery astro).
+   Domyślnie liczona jest cała klatka bez żadnej selekcji pikseli; opcje `--win`/`--clip` tylko
+   dla problematycznych danych (patrz opis skryptu).
 4. W Octave:
    ```octave
    sensor_characterize('<kamera>')
@@ -70,13 +72,19 @@ Znajduje wszystkie katalogi z RAW pod `frames/<kamera>/raw/` i konwertuje je Sir
 32 bit) do `frames/<kamera>/fits/<katalog>_NNNNN.fit`. Nagłówki `ISOSPEED`/`EXPTIME` są zachowane.
 Katalog `fits/` jest czyszczony przed konwersją.
 
-### frames2stats.py <kamera>
+### frames2stats.py [--win N] [--clip S] <kamera>
 Grupuje pliki FITS z `frames/<kamera>/` po (ISO, EXPTIME), dla każdej grupy bierze dwie pierwsze klatki i liczy
-z centralnego okna 4096×4096 px (lub mniejszego, gdy klatka jest mniejsza):
-`average` = średnia, `sigma` = std(klatka1 − klatka2)/√2.
-Piksele odstające o więcej niż 8 robustnych sigm (MAD) w którejkolwiek klatce są pomijane
-(uszkodzone bloki w NEF, gorące piksele); odsetek zamaskowanych pikseli jest wypisywany na stderr.
+`average` = średnia, `sigma` = std(klatka1 − klatka2)/√2 z całej klatki.
 Zapisuje `stats/<kamera>.csv` (rozdzielany `;`).
+
+Domyślnie żadne piksele nie są odrzucane – szum kamery ma ciężkie ogony (piksele RTS itp.) i to jest
+realny szum, który model ma opisywać. Opcje do użycia tylko przy wadliwych danych:
+- `--win N` – tylko centralne N×N px (np. gradient/amp glow przy krawędziach jak w D5100 z podmienionym firmware),
+- `--clip S` – pomija piksele odległe o > S robustnych sigm (MAD) od mediany w którejkolwiek klatce
+  (uszkodzone bloki o wartości 4128 w NEF z D5100, patrz `frames/Nikon_D5100/CORRUPTED.txt`).
+  Uwaga: na szumie z ciężkimi ogonami zaniża sigmę (Z6 II: 0.5–5 %, do 13 % przy ISO 6400 / 1/100 s).
+
+Użyte parametry: `Nikon_D5100` – `--win 4096 --clip 8`; `Nikon_Z6_2`, `ASI2600MM_5deg` – domyślne.
 
 ### sensor_characterize(name)
 Główne wejście. Wczytuje `stats/<name>.csv` → `sensor_fit` → `sensor_plot` → `sensor_print_model`.
@@ -97,7 +105,7 @@ Fig 1 – dane wejściowe z dopasowaniami. Fig 2 – egain, read noise vs ISO, S
 Drukuje strukturę `camera` w formie kodu do wklejenia w `sensor_models.m`.
 
 ### camera = sensor_models(name)
-Baza dopasowanych modeli (`"ASI2600MM_5deg"`, `"Nikon-D5100"`).
+Baza dopasowanych modeli (`"ASI2600MM_5deg"`, `"Nikon_D5100"`).
 
 ### data = sensor_simulate(camera, shutter)
 Generuje syntetyczne statystyki z modelu (odwrotność `sensor_fit`).
