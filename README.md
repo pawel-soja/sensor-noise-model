@@ -1,0 +1,91 @@
+# Charakterystyka sensora kamery
+
+Wyznaczanie modelu szumu sensora (bias, egain, read noise, dark current) z serii
+klatek dark o różnych ISO/gain i czasach ekspozycji.
+Metoda: https://www.brisk.org.uk/photog/d3readn.html
+
+## Układ katalogów
+
+```
+frames/<kamera>/      klatki dark (FITS; dla DSLR także RAW + skrypt konwersji Siril)
+stats/<kamera>.csv    statystyki z frames2stats.py
+```
+
+Nazwa `<kamera>` jest kluczem w całym potoku: katalog klatek, plik CSV,
+`analysis.name` i `case` w `sensor_models.m`.
+
+## Potok
+
+```
+frames/<kamera>/**/*.fit[s]   (pary klatek dla każdego ISO × ekspozycja)
+  │  ./frames2stats.py <kamera>
+  ▼
+stats/<kamera>.csv            ISO; shutter [s]; average [DN]; sigma [DN]
+  │  sensor_characterize('<kamera>')
+  │    ├─ sensor_fit          dopasowania liniowe → struktura analysis
+  │    ├─ sensor_plot         wykresy (fig 1: dane wejściowe, fig 2: model)
+  │    └─ sensor_print_model  drukuje gotowy kod struktury `camera`
+  ▼
+sensor_models.m               wklej wydrukowaną strukturę jako nowy `case`
+```
+
+## Krok po kroku – nowa kamera
+
+1. Zrób pary klatek dark dla każdej kombinacji ISO/gain × czas ekspozycji
+   (min. 2 klatki na kombinację, kilka czasów od bardzo krótkiego do długiego).
+2. Wrzuć je do `frames/<kamera>/` (mogą być w podkatalogach – skrypt szuka rekurencyjnie).
+   Dla DSLR najpierw skonwertuj RAW → FITS (patrz `frames/Nikon-D5100/build.sh`, Siril).
+3. Policz statystyki:
+   ```sh
+   ./frames2stats.py <kamera>        # → stats/<kamera>.csv
+   ```
+   Gain czytany jest z nagłówka `ISOSPEED` (DSLR) lub `GAIN` (kamery astro).
+4. W Octave:
+   ```octave
+   sensor_characterize('<kamera>')
+   ```
+5. Skopiuj wydruk z konsoli do `sensor_models.m` jako nowy `case`.
+
+## Skrypty
+
+### frames2stats.py <kamera>
+Grupuje pliki FITS z `frames/<kamera>/` po (ISO, EXPTIME), dla każdej grupy bierze dwie pierwsze klatki i liczy
+z centralnego okna 4096×4096 px (lub mniejszego, gdy klatka jest mniejsza):
+`average` = średnia, `sigma` = std(klatka1 − klatka2)/√2.
+Zapisuje `stats/<kamera>.csv` (rozdzielany `;`).
+
+### sensor_characterize(name)
+Główne wejście. Wczytuje `stats/<name>.csv` → `sensor_fit` → `sensor_plot` → `sensor_print_model`.
+
+### analysis = sensor_fit(data)
+Z macierzy `[ISO shutter average sigma]` liczy dla każdego ISO:
+- `bias` – przecięcie prostej average(shutter)
+- `egain` [DN/e-] – nachylenie prostej sigma²(average − bias)
+- `read_noise` [DN] – √ przecięcia tej prostej
+- `dark_current` [e-/s/pix] – nachylenie average(shutter) / egain
+- `iso2egain`, `egain2read_noise` – dopasowania liniowe między ISO i parametrami;
+  `has_iso` mówi, czy ISO skaluje się liniowo (DSLR) czy logarytmicznie (gain 0.1 dB, kamery astro)
+
+### sensor_plot(analysis)
+Fig 1 – dane wejściowe z dopasowaniami. Fig 2 – egain, read noise vs ISO, SNR vs ISO.
+
+### sensor_print_model(analysis)
+Drukuje strukturę `camera` w formie kodu do wklejenia w `sensor_models.m`.
+
+### camera = sensor_models(name)
+Baza dopasowanych modeli (`"ASI2600MM_5deg"`, `"Nikon-D5100"`).
+
+### data = sensor_simulate(camera, shutter)
+Generuje syntetyczne statystyki z modelu (odwrotność `sensor_fit`).
+
+### sensor_validate(name)
+Test round-trip: `sensor_models` → `sensor_simulate` → `sensor_fit` → `sensor_plot`.
+Wynik powinien odtworzyć parametry wejściowego modelu.
+
+## Poza potokiem
+
+### snr_vs_iso(name)
+Eksperyment: SNR w funkcji ISO dla stałego całkowitego czasu ekspozycji.
+
+### counts2mag
+Szacowanie jasności gwiazdowej (mag) z zliczeń ADU – notatki z pomiaru Deneba.
