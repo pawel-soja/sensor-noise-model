@@ -1,4 +1,4 @@
-function snr_vs_iso(name = "Nikon-D5100")
+function snr_vs_iso(name = "Nikon_D5100")
     pkg load statistics
 
     camera = sensor_models(name);
