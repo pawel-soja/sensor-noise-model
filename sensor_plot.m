@@ -22,7 +22,11 @@ function sensor_plot(analysis)
         plot_iso(p.average, p.sigma2, p, p.average2sigma2);
         xlabel('Average - Bias [DN]');
         ylabel('Sigma^2 [DN^2]');
-        title('Photon transfer: slope = egain [DN/e-], intercept = read noise^2');
+        if isempty(p.anchor)
+            title('Photon transfer: slope = egain [DN/e-], intercept = read noise^2');
+        else
+            title('Photon transfer (not used for egain: too little dark signal, see anchor)');
+        end
     end
 
     sensor_figure(2, [p.name ' - Sensor model']);
@@ -38,11 +42,11 @@ function sensor_plot(analysis)
     ylabel(ax(2), 'Read Noise [DN]');
     if p.has_iso
         xlabel('ISO');
-        title(sprintf("Egain vs ISO: f(x) = %g * x + %g", p.iso2egain(1), p.iso2egain(2)));
+        title(sprintf("Egain (%s) vs ISO: f(x) = %g * x + %g", p.egain_source, p.iso2egain(1), p.iso2egain(2)));
     else
         label_gain_ticks(ax, p);
         xlabel('Gain [0.1 dB]  (linear in 100*10^{gain/200})');
-        title(sprintf("Egain vs gain: f(g) = %g * 100*10^{g/200} + %g", p.iso2egain(1), p.iso2egain(2)));
+        title(sprintf("Egain (%s) vs gain: f(g) = %g * 100*10^{g/200} + %g", p.egain_source, p.iso2egain(1), p.iso2egain(2)));
     end
     grid on;
     hold on;

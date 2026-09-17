@@ -95,19 +95,35 @@ real noise the model should describe. Options for faulty data only:
 
 Parameters used: `Nikon_D5100` – `--win 4096 --clip 8`; `Nikon_Z6_2`, `ASI2600MM_5deg` – defaults.
 
-### analysis = sensor_characterize(name)
+### analysis = sensor_characterize(name, anchor = sensor_anchor(name))
 Main entry point. Loads `stats/<name>.csv` → `sensor_fit` → `sensor_plot` → `sensor_print_model`.
 Returns the `analysis` struct (e.g. for `sensor_plot_iso_limit`).
 
-### analysis = sensor_fit(data)
+### analysis = sensor_fit(data, anchor = [])
 From the `[ISO shutter average sigma]` matrix computes, for every ISO:
 - `bias` – intercept of the average(shutter) line
-- `egain` [DN/e-] – slope of the sigma²(average − bias) line
+- `dark_rate` [DN/s] – slope of the average(shutter) line
+- `egain_pt` [DN/e-] – slope of the sigma²(average − bias) line (photon transfer)
 - `read_noise` [DN] – √ of that line's intercept
-- `dark_current` [e-/s/pix] – slope of average(shutter) / egain
+- `dark_current` [e-/s/pix] – `dark_rate / egain`
 - `iso2egain`, `egain2read_noise` – linear fits between ISO and the parameters;
   `has_iso` tells whether ISO scales linearly (DSLR) or logarithmically (0.1 dB gain, astro cameras)
 - `setting` – ISO/gain values as set on the camera (for labels)
+
+The number of exposures may differ between ISO settings (missing entries are `NaN`).
+
+**Where egain comes from.** Photon transfer on darks only works when the dark signal is large
+(D5100: 0.4 e-/s). Cameras with low dark current (cooled astro cameras, modern DSLRs) accumulate
+< 1 e- over the whole series and the variance grows mostly through hot/blinking pixels – the slope
+is random. `anchor = struct('iso', I, 'egain', G)` switches the method: dark current in e-/s does
+not depend on ISO, so `dark_rate(ISO) / dark_rate(I)` is the relative egain (the mean is robust to
+hot pixels) and `G` (from a datasheet / a single flat pair) fixes the absolute value. Read noise² is
+then `sigma² − egain·average`. `egain_source` records which method was used.
+Relative egain at low ISO needs long darks (Z6 II: 0.015 DN/s at ISO 100 → several minutes to
+rise above the noise of the mean).
+
+### anchor = sensor_anchor(name)
+Table of external egain references for cameras that need one (`[]` = photon transfer).
 
 ### sensor_plot(analysis)
 Fig 1 – input data with fits. Fig 2 – egain, read noise vs ISO, SNR vs ISO.
@@ -125,7 +141,8 @@ sensor_plot_iso_limit(sensor_characterize('Nikon_D5100'), 1600)
 Prints the `camera` struct as code to paste into `sensor_models.m`.
 
 ### camera = sensor_models(name)
-Database of fitted models (`"ASI2600MM_5deg"`, `"Nikon_D5100"`).
+Database of fitted models (`"ASI2600MM_5deg"`, `"Nikon_D5100"`, `"Nikon_Z6_2"`). Besides the linear
+fits it holds the measured `egain` and `read_noise` [DN] for every setting.
 
 ### data = sensor_simulate(camera, shutter)
 Generates synthetic statistics from a model (inverse of `sensor_fit`).
@@ -141,7 +158,13 @@ Comparison table of cameras from `sensor_models` for a given sky flux [e-/s/px] 
 is 10 % of the sky+dark variance, noise variance per second of integration `sky + D + RN²/t` and the
 resulting relative integration time for equal SNR.
 ```octave
-sensor_compare({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, 0.3, 60)
+sensor_compare({'ASI2600MM_5deg', {'Nikon_Z6_2', 800}, {'Nikon_D5100', 1600}}, 0.3, 60)
+```
+```
+camera            setting   egain  RN [e-]  D [e-/s]  t_min   var/s   time
+ASI2600MM_5deg        250   43.54    0.62    0.0017   12.7   0.308  1.00x
+Nikon_Z6_2            800    2.64    2.06    0.0283  129.4   0.399  1.30x
+Nikon_D5100          1600    5.90    2.04    0.4012   59.4   0.771  2.50x
 ```
 Under a dark sky (0.3 e-/s) the D5100 needs ~2.5× the time of the ASI2600 – almost entirely due to
 dark current; under a bright sky (5 e-/s) the difference drops to ~9 %.
@@ -177,8 +200,11 @@ Full model:
 
 ### Nikon Z6 II
 
-Input data only so far – 5 exposures up to 8 s are not enough to fit the dark current
-(the sensor has about 0.1 e-/s/px) and the model is unstable. Dual conversion gain is visible:
-read noise at ISO 800 (2.6 DN) is lower than at ISO 400 (4.2 DN).
+The darks of this camera carry too little signal for photon transfer (0.015 DN/s at ISO 100), so
+egain comes from the dark signal rate anchored at ISO 800 (`sensor_anchor`, provisional value from
+Z6 data). From ISO 400 upwards the result is consistent: read noise 3.5 e- (ISO 400–640), drop to
+2.1 e- at ISO 800 (dual conversion gain), 1.6 → 1.2 e- above. ISO 100–200 need multi-minute darks
+– not reliable yet.
 
+![Z6 II – model](plots/Nikon_Z6_2_model.png)
 ![Z6 II – input data](plots/Nikon_Z6_2_input.png)

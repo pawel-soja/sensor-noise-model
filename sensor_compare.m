@@ -28,7 +28,11 @@ function out = sensor_compare(cameras, sky = 0.3, t = 60)
         end
 
         settings = camera_settings(camera);
-        rn_e = camera.egain2read_noise(camera.egain) ./ camera.egain;   % e-
+        if isfield(camera, 'read_noise')
+            rn_e = camera.read_noise ./ camera.egain;                        % measured, e-
+        else
+            rn_e = camera.egain2read_noise(camera.egain) ./ camera.egain;   % from linear fit, e-
+        end
 
         if isempty(setting)
             [~, k] = min(rn_e);

@@ -95,19 +95,35 @@ realny szum, który model ma opisywać. Opcje do użycia tylko przy wadliwych da
 
 Użyte parametry: `Nikon_D5100` – `--win 4096 --clip 8`; `Nikon_Z6_2`, `ASI2600MM_5deg` – domyślne.
 
-### analysis = sensor_characterize(name)
+### analysis = sensor_characterize(name, anchor = sensor_anchor(name))
 Główne wejście. Wczytuje `stats/<name>.csv` → `sensor_fit` → `sensor_plot` → `sensor_print_model`.
 Zwraca strukturę `analysis` (np. do `sensor_plot_iso_limit`).
 
-### analysis = sensor_fit(data)
+### analysis = sensor_fit(data, anchor = [])
 Z macierzy `[ISO shutter average sigma]` liczy dla każdego ISO:
 - `bias` – przecięcie prostej average(shutter)
-- `egain` [DN/e-] – nachylenie prostej sigma²(average − bias)
+- `dark_rate` [DN/s] – nachylenie prostej average(shutter)
+- `egain_pt` [DN/e-] – nachylenie prostej sigma²(average − bias) (photon transfer)
 - `read_noise` [DN] – √ przecięcia tej prostej
-- `dark_current` [e-/s/pix] – nachylenie average(shutter) / egain
+- `dark_current` [e-/s/pix] – `dark_rate / egain`
 - `iso2egain`, `egain2read_noise` – dopasowania liniowe między ISO i parametrami;
   `has_iso` mówi, czy ISO skaluje się liniowo (DSLR) czy logarytmicznie (gain 0.1 dB, kamery astro)
 - `setting` – wartości ISO/gain tak jak ustawione w kamerze (do etykiet)
+
+Liczba czasów może być różna dla różnych ISO (brakujące pola są `NaN`).
+
+**Skąd egain.** Photon transfer na darkach działa tylko, gdy sygnał darka jest duży (D5100: 0.4 e-/s).
+W kamerach z małym prądem ciemnym (chłodzone astro, nowoczesne DSLR) w całej serii przybywa
+< 1 e-, a wariancja rośnie głównie przez gorące/migające piksele – nachylenie jest przypadkowe.
+Wtedy `anchor = struct('iso', I, 'egain', G)` przestawia metodę: prąd ciemny w e-/s nie zależy od ISO,
+więc `dark_rate(ISO) / dark_rate(I)` to względny egain (średnia jest odporna na gorące piksele),
+a `G` (z specyfikacji / jednej pary flatów) daje wartość absolutną. Read noise² liczony jest wtedy
+jako `sigma² − egain·average`. Pole `egain_source` mówi, która metoda była użyta.
+Do względnego egain przy niskich ISO potrzebne są długie darki (Z6 II: 0.015 DN/s przy ISO 100
+→ kilka minut, żeby wyjść ponad szum średniej).
+
+### anchor = sensor_anchor(name)
+Tabela zewnętrznych punktów odniesienia egain dla kamer, które go potrzebują (`[]` = photon transfer).
 
 ### sensor_plot(analysis)
 Fig 1 – dane wejściowe z dopasowaniami. Fig 2 – egain, read noise vs ISO, SNR vs ISO.
@@ -125,7 +141,8 @@ sensor_plot_iso_limit(sensor_characterize('Nikon_D5100'), 1600)
 Drukuje strukturę `camera` w formie kodu do wklejenia w `sensor_models.m`.
 
 ### camera = sensor_models(name)
-Baza dopasowanych modeli (`"ASI2600MM_5deg"`, `"Nikon_D5100"`).
+Baza dopasowanych modeli (`"ASI2600MM_5deg"`, `"Nikon_D5100"`, `"Nikon_Z6_2"`). Oprócz dopasowań
+liniowych zawiera zmierzone `egain` i `read_noise` [DN] dla każdego ustawienia.
 
 ### data = sensor_simulate(camera, shutter)
 Generuje syntetyczne statystyki z modelu (odwrotność `sensor_fit`).
@@ -141,7 +158,13 @@ wymuszone przez `{nazwa, ustawienie}`), egain, read noise [e-], prąd ciemny, `t
 od której read noise² to 10 % wariancji nieba+darka, wariancja na sekundę integracji
 `sky + D + RN²/t` i wynikający z niej względny czas integracji do tego samego SNR.
 ```octave
-sensor_compare({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, 0.3, 60)
+sensor_compare({'ASI2600MM_5deg', {'Nikon_Z6_2', 800}, {'Nikon_D5100', 1600}}, 0.3, 60)
+```
+```
+camera            setting   egain  RN [e-]  D [e-/s]  t_min   var/s   time
+ASI2600MM_5deg        250   43.54    0.62    0.0017   12.7   0.308  1.00x
+Nikon_Z6_2            800    2.64    2.06    0.0283  129.4   0.399  1.30x
+Nikon_D5100          1600    5.90    2.04    0.4012   59.4   0.771  2.50x
 ```
 Przy ciemnym niebie (0.3 e-/s) D5100 potrzebuje ~2.5× czasu ASI2600 – prawie wyłącznie przez prąd
 ciemny; pod jasnym niebem (5 e-/s) różnica spada do ~9 %.
