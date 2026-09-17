@@ -3,12 +3,12 @@ function sensor_plot_iso_limit(analysis, iso_limit)
     % where the sensor's analog gain stops changing (higher ISO = digital scaling only).
     % Saves plots/<name>_iso_limit.png
     p = analysis;
-    iso   = p.iso(:);
+    iso   = p.setting(:);   % ISO (DSLR) or gain [0.1 dB] (astro camera), as set on the camera
     egain = p.egain(:);
     rn_dn = p.read_noise(:);
     rn_e  = rn_dn ./ egain;
 
-    figure(3, 'name', [p.name ' - analog gain limit']); clf;
+    sensor_figure(3, [p.name ' - analog gain limit']);
     xl = [min(iso) max(iso)] .* [0.9 1.1];
 
     subplot(211);
@@ -42,10 +42,7 @@ function sensor_plot_iso_limit(analysis, iso_limit)
     grid on;
     hold off;
 
-    [~, ~] = mkdir('plots');
-    file = fullfile('plots', [p.name '_iso_limit.png']);
-    print(3, file, '-dpng', '-S1400,900');
-    printf('saved %s\n', file);
+    sensor_save_png(3, [p.name '_iso_limit']);
 end
 
 function shade_above(iso_limit, iso, y)

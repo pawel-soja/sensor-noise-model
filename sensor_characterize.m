@@ -1,8 +1,4 @@
 function analysis = sensor_characterize(name = 'ASI2600MM_5deg')
-    set(0, "defaulttextfontsize", 16)  % title
-    set(0, "defaultaxesfontsize", 11)  % axes labels
-    set(0, "defaultlinelinewidth", 1.1)
-
     analysis = load_stats(name);
 
     sensor_plot(analysis);

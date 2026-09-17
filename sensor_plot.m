@@ -3,7 +3,7 @@ function sensor_plot(analysis)
 
     # Debug - Input data
     if true
-        figure(1, 'name', [p.name ' - Debug - Input data']); clf;
+        sensor_figure(1, [p.name ' - Debug - Input data']);
         colormap(iso_colormap());
 
         subplot(221);
@@ -25,16 +25,25 @@ function sensor_plot(analysis)
         title('Photon transfer: slope = egain [DN/e-], intercept = read noise^2');
     end
 
-    figure(2, 'name', [p.name ' - Sensor model']); clf;
+    sensor_figure(2, [p.name ' - Sensor model']);
     colormap(iso_colormap());
+    [xs, xname] = setting_axis(p);
+
     subplot(321);
+    % x = ISO equivalent so the egain fit is a straight line; ticks relabelled with gain for astro cameras
     [ax h1 h2] = plotyy(p.iso, p.egain, p.iso, p.read_noise);
     set ([h1, h2], "linestyle", "-");
     set ([h1, h2], "marker", "+");
     ylabel(ax(1), 'Egain [DN/e-]');
     ylabel(ax(2), 'Read Noise [DN]');
-    xlabel('ISO');
-    title(sprintf("Egain vs ISO: f(x) = %g * x + %g", p.iso2egain(1), p.iso2egain(2)));
+    if p.has_iso
+        xlabel('ISO');
+        title(sprintf("Egain vs ISO: f(x) = %g * x + %g", p.iso2egain(1), p.iso2egain(2)));
+    else
+        label_gain_ticks(ax, p);
+        xlabel('Gain [0.1 dB]  (linear in 100*10^{gain/200})');
+        title(sprintf("Egain vs gain: f(g) = %g * 100*10^{g/200} + %g", p.iso2egain(1), p.iso2egain(2)));
+    end
     grid on;
     hold on;
 
@@ -44,7 +53,12 @@ function sensor_plot(analysis)
     set ([h1, h2], "marker", "+");
     ylabel(ax(1), 'Egain [e-/DN]');
     ylabel(ax(2), 'Read Noise [e-]');
-    xlabel('ISO');
+    if p.has_iso
+        xlabel('ISO');
+    else
+        label_gain_ticks(ax, p);
+        xlabel('Gain [0.1 dB]  (linear in 100*10^{gain/200})');
+    end
     title('Gain and read noise in electrons');
     grid on;
 
@@ -66,6 +80,7 @@ function sensor_plot(analysis)
 
     subplot(326);
 
+    % Simulated single frame: signal and variance in DN for a given egain [DN/e-]
     U = @(camera, egain, exposure, photons) ...
           egain .* exposure .* photons;
 
@@ -73,37 +88,47 @@ function sensor_plot(analysis)
           egain .^ 2 .* exposure .* (photons + camera.dark_current) + ...
           (camera.egain2read_noise(1) .* egain + camera.egain2read_noise(2)) .^ 2;
 
-    exposure = 30; # s
-    egain    = 0.1; # DN/e-
-    photons  = 2; # e-/s
+    exposures = [10 15];  # s
+    photons   = 0.3;          # e-/s/pix, faint target / narrowband
 
-    egain = p.egain(2);
-    iso = p.iso;
-    x = p.iso2egain(1) .* iso + p.iso2egain(2);
+    x = p.egain(:);   # measured DN/e- per ISO/gain (linear iso2egain fit is poor when gain saturates)
 
-    L = U(p, egain .* x, exposure ./ x, photons) .^ 2;
-    M = V(p, egain .* x, exposure ./ x, photons) ./ (x);
-    SNR = L ./ M;
-
-    plot(iso, 10*log(SNR));
-    xlabel('ISO');
+    hold on;
+    for e = exposures
+        SNR = U(p, x, e, photons) ./ sqrt(V(p, x, e, photons));
+        plot(xs, 20 * log10(SNR), '-+');
+    end
+    hold off;
+    legend(arrayfun(@(e) sprintf('%g s', e), exposures, 'uniformoutput', false), 'location', 'east');
+    xlabel(xname);
     ylabel('SNR [dB]');
-    title(sprintf('SNR vs ISO (%g s, %g e-/s)', exposure, photons));
+    title(sprintf('SNR of a single frame, %g e-/s', photons));
     grid on;
 
-    save_png(1, [p.name '_input']);
-    save_png(2, [p.name '_model']);
-end
-
-function save_png(fig, name)
-    [~, ~] = mkdir('plots');
-    file = fullfile('plots', [name '.png']);
-    print(fig, file, '-dpng', '-S1400,900');
-    printf('saved %s\n', file);
+    sensor_save_png(1, [p.name '_input']);
+    sensor_save_png(2, [p.name '_model']);
 end
 
 function cmap = iso_colormap()
     cmap = jet(64);
+end
+
+# X axis in the camera's own units: ISO for DSLR, gain [0.1 dB] for astro cameras
+function [x, name] = setting_axis(p)
+    x = p.setting(:);
+    if p.has_iso
+        name = 'ISO';
+    else
+        name = 'Gain [0.1 dB]';
+    end
+end
+
+# Axes plotted against p.iso: put ~6 ticks at real gain settings, labelled with the gain value
+function label_gain_ticks(ax, p)
+    iso = p.iso(:)';
+    [~, k] = min(abs(iso' - linspace(min(iso), max(iso), 6)), [], 1);
+    k = unique(k);
+    set(ax, 'xtick', iso(k), 'xticklabel', num2str(p.setting(k)'));
 end
 
 # One line per ISO/gain setting coloured from blue (lowest) to red (highest), colorbar instead of legend.
@@ -136,6 +161,7 @@ function plot_iso(x, y, p, coeff)
         end
     end
     hold off;
+    grid on;
 
     # ~6 ticks evenly spread along the bar, snapped to real settings
     [~, k] = min(abs(v' - linspace(clim(1), clim(2), 6)), [], 1);
