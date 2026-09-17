@@ -7,19 +7,19 @@ function sensor_plot(analysis)
         colormap(iso_colormap());
 
         subplot(221);
-        plot_iso(p.shutter, p.average, p.iso, p.shutter2average);
+        plot_iso(p.shutter, p.average, p, p.shutter2average);
         xlabel('Shutter [s]');
         ylabel('Average - Bias [DN]');
         title('Dark signal vs exposure (linear fit)');
 
         subplot(222);
-        plot_iso(p.shutter, p.sigma, p.iso);
+        plot_iso(p.shutter, p.sigma, p);
         xlabel('Shutter [s]');
         ylabel('Sigma [DN]');
         title('Noise vs exposure');
 
         subplot(212);
-        plot_iso(p.average, p.sigma2, p.iso, p.average2sigma2);
+        plot_iso(p.average, p.sigma2, p, p.average2sigma2);
         xlabel('Average - Bias [DN]');
         ylabel('Sigma^2 [DN^2]');
         title('Photon transfer: slope = egain [DN/e-], intercept = read noise^2');
@@ -59,7 +59,7 @@ function sensor_plot(analysis)
     grid on;
 
     subplot(325);
-    plot_iso(p.shutter, p.average ./ p.egain', p.iso);
+    plot_iso(p.shutter, p.average ./ p.egain', p);
     xlabel('Shutter [s]');
     ylabel('Dark signal [e-]');
     title(sprintf('Dark current: %.3g e-/s/pix', p.dark_current));
@@ -90,25 +90,43 @@ function sensor_plot(analysis)
     ylabel('SNR [dB]');
     title(sprintf('SNR vs ISO (%g s, %g e-/s)', exposure, photons));
     grid on;
+
+    save_png(1, [p.name '_input']);
+    save_png(2, [p.name '_model']);
+end
+
+function save_png(fig, name)
+    [~, ~] = mkdir('plots');
+    file = fullfile('plots', [name '.png']);
+    print(fig, file, '-dpng', '-S1400,900');
+    printf('saved %s\n', file);
 end
 
 function cmap = iso_colormap()
     cmap = jet(64);
 end
 
-# One line per ISO coloured by log(ISO) (blue = lowest, red = highest), colorbar instead of legend.
+# One line per ISO/gain setting coloured from blue (lowest) to red (highest), colorbar instead of legend.
+# DSLR ISO is spread on a log scale, astro-camera gain (0.1 dB) is already logarithmic.
 # With coeff: '+' data plus fitted line, otherwise '-+'.
-function plot_iso(x, y, iso, coeff)
+function plot_iso(x, y, p, coeff)
     cmap = iso_colormap();
-    liso = log10(iso);
-    clim = [min(liso) max(liso)];
+    setting = p.setting(:)';
+    if p.has_iso
+        v = log10(setting);
+        name = 'ISO';
+    else
+        v = setting;
+        name = 'Gain';
+    end
+    clim = [min(v) max(v)];
     if diff(clim) == 0
         clim += [-0.5 0.5];
     end
-    idx = 1 + round((liso - clim(1)) / diff(clim) * (rows(cmap) - 1));
+    idx = 1 + round((v - clim(1)) / diff(clim) * (rows(cmap) - 1));
 
     hold on;
-    for i = 1:numel(iso)
+    for i = 1:numel(setting)
         c = cmap(idx(i), :);
         if nargin < 4
             plot(x(:, i), y(:, i), '-+', 'color', c);
@@ -119,9 +137,11 @@ function plot_iso(x, y, iso, coeff)
     end
     hold off;
 
+    # ~6 ticks evenly spread along the bar, snapped to real settings
+    [~, k] = min(abs(v' - linspace(clim(1), clim(2), 6)), [], 1);
+    k = unique(k);
     caxis(clim);
     cb = colorbar();
-    ticks = unique(round(iso(round(linspace(1, numel(iso), min(numel(iso), 6))))));
-    set(cb, 'ytick', log10(ticks), 'yticklabel', num2str(ticks'));
-    ylabel(cb, 'ISO');
+    set(cb, 'ytick', v(k), 'yticklabel', num2str(setting(k)'));
+    title(cb, name, 'fontsize', 11);
 end

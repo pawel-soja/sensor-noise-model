@@ -58,6 +58,7 @@ function out = sensor_fit(data)
         out.iso = as_log.x;
         out.has_iso = false;
     end
+    out.setting = ISO;   % value as set on the camera (ISO or gain), for labels
     out.iso2egain = polyfit(out.iso, out.egain, 1);
 
     out.egain2iso   = polyfit_cols(out.egain, out.iso', 1);

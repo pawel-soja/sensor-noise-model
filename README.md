@@ -1,123 +1,166 @@
-# Charakterystyka sensora kamery
+# Camera sensor characterization
 
-Wyznaczanie modelu szumu sensora (bias, egain, read noise, dark current) z serii
-klatek dark o różnych ISO/gain i czasach ekspozycji.
-Metoda: https://www.brisk.org.uk/photog/d3readn.html
+🇬🇧 English | [🇵🇱 Polski](README.pl.md)
 
-## Układ katalogów
+Derives a sensor noise model (bias, egain, read noise, dark current) from series of
+dark frames taken at different ISO/gain settings and exposure times.
+Method: https://www.brisk.org.uk/photog/d3readn.html
 
-```
-frames/<kamera>/          klatki dark w FITS (kamery astro zapisują tu bezpośrednio)
-frames/<kamera>/raw/      DSLR: pliki RAW (NEF itp.), mogą być w podkatalogach
-frames/<kamera>/fits/     DSLR: FITS wygenerowane przez raw2fits.sh
-stats/<kamera>.csv        statystyki z frames2stats.py
-```
-
-Nazwa `<kamera>` jest kluczem w całym potoku: katalog klatek, plik CSV,
-`analysis.name` i `case` w `sensor_models.m`.
-
-## Potok
+## Directory layout
 
 ```
-frames/<kamera>/raw/**/*.nef  (DSLR)
-  │  ./gphoto2_take.sh          zdjęcia przez USB (opcjonalnie)
-  │  ./raw2fits.sh <kamera>     RAW → FITS (Siril)
+frames/<camera>/          dark frames in FITS (astro cameras write here directly)
+frames/<camera>/raw/      DSLR: RAW files (NEF etc.), subdirectories allowed
+frames/<camera>/fits/     DSLR: FITS produced by raw2fits.sh
+stats/<camera>.csv        statistics from frames2stats.py
+plots/<camera>_*.png      plots saved automatically by sensor_plot
+```
+
+`<camera>` is the key throughout the pipeline: frames directory, CSV file,
+`analysis.name` and the `case` in `sensor_models.m`.
+
+## Pipeline
+
+```
+frames/<camera>/raw/**/*.nef  (DSLR)
+  │  ./gphoto2_take.sh          capture over USB (optional)
+  │  ./raw2fits.sh <camera>     RAW → FITS (Siril)
   ▼
-frames/<kamera>/**/*.fit[s]   (pary klatek dla każdego ISO × ekspozycja)
-  │  ./frames2stats.py <kamera>
+frames/<camera>/**/*.fit[s]   (frame pairs for every ISO × exposure)
+  │  ./frames2stats.py <camera>
   ▼
-stats/<kamera>.csv            ISO; shutter [s]; average [DN]; sigma [DN]
-  │  sensor_characterize('<kamera>')
-  │    ├─ sensor_fit          dopasowania liniowe → struktura analysis
-  │    ├─ sensor_plot         wykresy (fig 1: dane wejściowe, fig 2: model)
-  │    └─ sensor_print_model  drukuje gotowy kod struktury `camera`
+stats/<camera>.csv            ISO; shutter [s]; average [DN]; sigma [DN]
+  │  sensor_characterize('<camera>')
+  │    ├─ sensor_fit          linear fits → analysis struct
+  │    ├─ sensor_plot         plots (fig 1: input data, fig 2: model) → plots/<camera>_{input,model}.png
+  │    └─ sensor_print_model  prints ready-to-paste `camera` struct
   ▼
-sensor_models.m               wklej wydrukowaną strukturę jako nowy `case`
+sensor_models.m               paste the printed struct as a new `case`
 ```
 
-## Krok po kroku – nowa kamera
+## Step by step – new camera
 
-1. Zrób pary klatek dark dla każdej kombinacji ISO/gain × czas ekspozycji
-   (min. 2 klatki na kombinację, kilka czasów od bardzo krótkiego do długiego).
-   DSLR przez USB: ustaw `ISOS`/`TIMES` w `gphoto2_take.sh` i odpal `./gphoto2_take.sh`
-   – zapisze `frames/<kamera>/raw/dark_iso<ISO>_<czas>_<n>.nef`, np. `dark_iso800_0-01s_2.nef`
-   (czas w sekundach, kropka zamieniona na `-`; nazwa kamery z `gphoto2 --auto-detect`).
-2. Kamera astro: wrzuć FITS do `frames/<kamera>/` (mogą być w podkatalogach – skrypt szuka rekurencyjnie).
-   DSLR: RAW do `frames/<kamera>/raw/` i skonwertuj:
+1. Take pairs of dark frames for every ISO/gain × exposure time combination
+   (at least 2 frames per combination, several exposures from very short to long).
+   DSLR over USB: set `ISOS`/`TIMES` in `gphoto2_take.sh` and run `./gphoto2_take.sh`
+   – it writes `frames/<camera>/raw/dark_iso<ISO>_<time>_<n>.nef`, e.g. `dark_iso800_0-01s_2.nef`
+   (time in seconds with the dot replaced by `-`; camera name from `gphoto2 --auto-detect`).
+2. Astro camera: put the FITS files in `frames/<camera>/` (subdirectories allowed – the script searches recursively).
+   DSLR: put RAW files in `frames/<camera>/raw/` and convert:
    ```sh
-   ./raw2fits.sh <kamera>            # → frames/<kamera>/fits/
+   ./raw2fits.sh <camera>            # → frames/<camera>/fits/
    ```
-3. Policz statystyki:
+3. Compute statistics:
    ```sh
-   ./frames2stats.py <kamera>        # → stats/<kamera>.csv
+   ./frames2stats.py <camera>        # → stats/<camera>.csv
    ```
-   Gain czytany jest z nagłówka `ISOSPEED` (DSLR) lub `GAIN` (kamery astro).
-   Domyślnie liczona jest cała klatka bez żadnej selekcji pikseli; opcje `--win`/`--clip` tylko
-   dla problematycznych danych (patrz opis skryptu).
-4. W Octave:
+   Gain is read from the `ISOSPEED` (DSLR) or `GAIN` (astro camera) header keyword.
+   By default the whole frame is used with no pixel selection; `--win`/`--clip` are only for
+   problematic data (see script description).
+4. In Octave:
    ```octave
-   sensor_characterize('<kamera>')
+   sensor_characterize('<camera>')
    ```
-5. Skopiuj wydruk z konsoli do `sensor_models.m` jako nowy `case`.
+5. Copy the console output into `sensor_models.m` as a new `case`.
 
-## Skrypty
+## Scripts
 
 ### gphoto2_take.sh
-Wykrywa jedyną podłączoną kamerę (`gphoto2 --auto-detect`), ustawia RAW i dla każdej kombinacji
-`ISOS` × `TIMES` robi `FRAMES` (domyślnie 2) klatek do `frames/<kamera>/raw/`.
-Wartości `TIMES` w formacie zgłaszanym przez `gphoto2 --get-config capturesettings/shutterspeed`.
+Detects the single connected camera (`gphoto2 --auto-detect`), switches to RAW and for every
+`ISOS` × `TIMES` combination takes `FRAMES` (default 2) frames into `frames/<camera>/raw/`.
+`TIMES` values use the format reported by `gphoto2 --get-config capturesettings/shutterspeed`.
 
-### raw2fits.sh <kamera>
-Znajduje wszystkie katalogi z RAW pod `frames/<kamera>/raw/` i konwertuje je Sirilem (bez debayeru,
-32 bit) do `frames/<kamera>/fits/<katalog>_NNNNN.fit`. Nagłówki `ISOSPEED`/`EXPTIME` są zachowane.
-Katalog `fits/` jest czyszczony przed konwersją.
+### raw2fits.sh <camera>
+Finds every directory with RAW files under `frames/<camera>/raw/` and converts them with Siril
+(no debayer, 32 bit) into `frames/<camera>/fits/<dir>_NNNNN.fit`. `ISOSPEED`/`EXPTIME` headers are preserved.
+The `fits/` directory is wiped before conversion.
 
-### frames2stats.py [--win N] [--clip S] <kamera>
-Grupuje pliki FITS z `frames/<kamera>/` po (ISO, EXPTIME), dla każdej grupy bierze dwie pierwsze klatki i liczy
-`average` = średnia, `sigma` = std(klatka1 − klatka2)/√2 z całej klatki.
-Zapisuje `stats/<kamera>.csv` (rozdzielany `;`).
+### frames2stats.py [--win N] [--clip S] <camera>
+Groups FITS files from `frames/<camera>/` by (ISO, EXPTIME), takes the first two frames of each group and computes
+`average` = mean, `sigma` = std(frame1 − frame2)/√2 over the whole frame.
+Writes `stats/<camera>.csv` (`;`-separated).
 
-Domyślnie żadne piksele nie są odrzucane – szum kamery ma ciężkie ogony (piksele RTS itp.) i to jest
-realny szum, który model ma opisywać. Opcje do użycia tylko przy wadliwych danych:
-- `--win N` – tylko centralne N×N px (np. gradient/amp glow przy krawędziach jak w D5100 z podmienionym firmware),
-- `--clip S` – pomija piksele odległe o > S robustnych sigm (MAD) od mediany w którejkolwiek klatce
-  (uszkodzone bloki o wartości 4128 w NEF z D5100, patrz `frames/Nikon_D5100/CORRUPTED.txt`).
-  Uwaga: na szumie z ciężkimi ogonami zaniża sigmę (Z6 II: 0.5–5 %, do 13 % przy ISO 6400 / 1/100 s).
+By default no pixels are rejected – camera noise has heavy tails (RTS pixels etc.) and that is
+real noise the model should describe. Options for faulty data only:
+- `--win N` – use only the central N×N px (e.g. edge gradient / amp glow as in the D5100 with hacked firmware),
+- `--clip S` – ignore pixels further than S robust sigmas (MAD) from the median in either frame
+  (corrupt blocks of value 4128 in D5100 NEFs, see `frames/Nikon_D5100/CORRUPTED.txt`).
+  Note: on heavy-tailed noise it biases sigma low (Z6 II: 0.5–5 %, up to 13 % at ISO 6400 / 1/100 s).
 
-Użyte parametry: `Nikon_D5100` – `--win 4096 --clip 8`; `Nikon_Z6_2`, `ASI2600MM_5deg` – domyślne.
+Parameters used: `Nikon_D5100` – `--win 4096 --clip 8`; `Nikon_Z6_2`, `ASI2600MM_5deg` – defaults.
 
-### sensor_characterize(name)
-Główne wejście. Wczytuje `stats/<name>.csv` → `sensor_fit` → `sensor_plot` → `sensor_print_model`.
+### analysis = sensor_characterize(name)
+Main entry point. Loads `stats/<name>.csv` → `sensor_fit` → `sensor_plot` → `sensor_print_model`.
+Returns the `analysis` struct (e.g. for `sensor_plot_iso_limit`).
 
 ### analysis = sensor_fit(data)
-Z macierzy `[ISO shutter average sigma]` liczy dla każdego ISO:
-- `bias` – przecięcie prostej average(shutter)
-- `egain` [DN/e-] – nachylenie prostej sigma²(average − bias)
-- `read_noise` [DN] – √ przecięcia tej prostej
-- `dark_current` [e-/s/pix] – nachylenie average(shutter) / egain
-- `iso2egain`, `egain2read_noise` – dopasowania liniowe między ISO i parametrami;
-  `has_iso` mówi, czy ISO skaluje się liniowo (DSLR) czy logarytmicznie (gain 0.1 dB, kamery astro)
+From the `[ISO shutter average sigma]` matrix computes, for every ISO:
+- `bias` – intercept of the average(shutter) line
+- `egain` [DN/e-] – slope of the sigma²(average − bias) line
+- `read_noise` [DN] – √ of that line's intercept
+- `dark_current` [e-/s/pix] – slope of average(shutter) / egain
+- `iso2egain`, `egain2read_noise` – linear fits between ISO and the parameters;
+  `has_iso` tells whether ISO scales linearly (DSLR) or logarithmically (0.1 dB gain, astro cameras)
+- `setting` – ISO/gain values as set on the camera (for labels)
 
 ### sensor_plot(analysis)
-Fig 1 – dane wejściowe z dopasowaniami. Fig 2 – egain, read noise vs ISO, SNR vs ISO.
+Fig 1 – input data with fits. Fig 2 – egain, read noise vs ISO, SNR vs ISO.
+Lines coloured by log(ISO) (blue = lowest, red = highest) with a colorbar instead of a legend.
+Both figures are saved to `plots/<name>_input.png` and `plots/<name>_model.png`.
+
+### sensor_plot_iso_limit(analysis, iso_limit)
+Egain and read noise vs ISO (log axis) with the range above `iso_limit` highlighted, where analog
+gain no longer increases – saved to `plots/<name>_iso_limit.png`. E.g. for the D5100:
+```octave
+sensor_plot_iso_limit(sensor_characterize('Nikon_D5100'), 1600)
+```
 
 ### sensor_print_model(analysis)
-Drukuje strukturę `camera` w formie kodu do wklejenia w `sensor_models.m`.
+Prints the `camera` struct as code to paste into `sensor_models.m`.
 
 ### camera = sensor_models(name)
-Baza dopasowanych modeli (`"ASI2600MM_5deg"`, `"Nikon_D5100"`).
+Database of fitted models (`"ASI2600MM_5deg"`, `"Nikon_D5100"`).
 
 ### data = sensor_simulate(camera, shutter)
-Generuje syntetyczne statystyki z modelu (odwrotność `sensor_fit`).
+Generates synthetic statistics from a model (inverse of `sensor_fit`).
 
 ### sensor_validate(name)
-Test round-trip: `sensor_models` → `sensor_simulate` → `sensor_fit` → `sensor_plot`.
-Wynik powinien odtworzyć parametry wejściowego modelu.
+Round-trip test: `sensor_models` → `sensor_simulate` → `sensor_fit` → `sensor_plot`.
+The result should reproduce the input model parameters.
 
-## Poza potokiem
+## Outside the pipeline
 
 ### snr_vs_iso(name)
-Eksperyment: SNR w funkcji ISO dla stałego całkowitego czasu ekspozycji.
+Experiment: SNR as a function of ISO for a fixed total exposure time.
 
 ### counts2mag
-Szacowanie jasności gwiazdowej (mag) z zliczeń ADU – notatki z pomiaru Deneba.
+Estimating stellar magnitude from ADU counts – notes from a Deneb measurement.
+
+## Results
+
+### Nikon D5100 – ISO above 1600 is digital only
+
+From ISO 1600 upwards egain (5.9 DN/e-) and read noise (12.1 DN = 2.1 e-) stop changing:
+analog gain ends at 1600, higher ISO is purely digital scaling.
+SNR does not improve, only highlight headroom and bit depth are lost – for astrophotography
+there is no point going above ISO 1600.
+
+![D5100 – analog gain limit](plots/Nikon_D5100_iso_limit.png)
+
+Full model:
+
+![D5100 – model](plots/Nikon_D5100_model.png)
+![D5100 – input data](plots/Nikon_D5100_input.png)
+
+### ZWO ASI2600MM (−5 °C)
+
+![ASI2600MM – model](plots/ASI2600MM_5deg_model.png)
+![ASI2600MM – input data](plots/ASI2600MM_5deg_input.png)
+
+### Nikon Z6 II
+
+Input data only so far – 5 exposures up to 8 s are not enough to fit the dark current
+(the sensor has about 0.1 e-/s/px) and the model is unstable. Dual conversion gain is visible:
+read noise at ISO 800 (2.6 DN) is lower than at ISO 400 (4.2 DN).
+
+![Z6 II – input data](plots/Nikon_Z6_2_input.png)
