@@ -75,6 +75,12 @@ Znajduje wszystkie katalogi z RAW pod `frames/<kamera>/raw/` i konwertuje je Sir
 32 bit) do `frames/<kamera>/fits/<katalog>_NNNNN.fit`. Nagłówki `ISOSPEED`/`EXPTIME` są zachowane.
 Katalog `fits/` jest czyszczony przed konwersją.
 
+### build_images.sh
+Przegenerowuje wszystkie PNG w `plots/`: `sensor_characterize` dla każdego `stats/*.csv` plus
+dodatkowe figury z listy `EXTRA` (`sensor_plot_iso_limit` dla D5100, `sensor_validate`).
+Odpalaj po zmianach w skryptach Octave. Okna wykresów pojawiają się na chwilę (qt renderuje PNG
+1:1 z ekranem); bez `DISPLAY` używa gnuplota (czcionki mniej wierne).
+
 ### frames2stats.py [--win N] [--clip S] <kamera>
 Grupuje pliki FITS z `frames/<kamera>/` po (ISO, EXPTIME), dla każdej grupy bierze dwie pierwsze klatki i liczy
 `average` = średnia, `sigma` = std(klatka1 − klatka2)/√2 z całej klatki.
