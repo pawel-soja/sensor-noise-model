@@ -134,6 +134,18 @@ Generates synthetic statistics from a model (inverse of `sensor_fit`).
 Round-trip test: `sensor_models` → `sensor_simulate` → `sensor_fit` → `sensor_plot`.
 The result should reproduce the input model parameters.
 
+### sensor_compare(cameras, sky = 0.3, t = 60)
+Comparison table of cameras from `sensor_models` for a given sky flux [e-/s/px] and sub length [s]
+(same optics and QE). Per camera: ISO/gain (default: lowest read noise in e-, or forced with
+`{name, setting}`), egain, read noise [e-], dark current, `t_min` – sub length at which read noise²
+is 10 % of the sky+dark variance, noise variance per second of integration `sky + D + RN²/t` and the
+resulting relative integration time for equal SNR.
+```octave
+sensor_compare({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, 0.3, 60)
+```
+Under a dark sky (0.3 e-/s) the D5100 needs ~2.5× the time of the ASI2600 – almost entirely due to
+dark current; under a bright sky (5 e-/s) the difference drops to ~9 %.
+
 ## Outside the pipeline
 
 ### snr_vs_iso(name)

@@ -134,6 +134,18 @@ Generuje syntetyczne statystyki z modelu (odwrotność `sensor_fit`).
 Test round-trip: `sensor_models` → `sensor_simulate` → `sensor_fit` → `sensor_plot`.
 Wynik powinien odtworzyć parametry wejściowego modelu.
 
+### sensor_compare(cameras, sky = 0.3, t = 60)
+Tabela porównawcza kamer z `sensor_models` dla zadanego strumienia nieba [e-/s/px] i długości klatki [s]
+(ta sama optyka i QE). Dla każdej kamery: ISO/gain (domyślnie z najniższym read noise w e-, albo
+wymuszone przez `{nazwa, ustawienie}`), egain, read noise [e-], prąd ciemny, `t_min` – długość klatki,
+od której read noise² to 10 % wariancji nieba+darka, wariancja na sekundę integracji
+`sky + D + RN²/t` i wynikający z niej względny czas integracji do tego samego SNR.
+```octave
+sensor_compare({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, 0.3, 60)
+```
+Przy ciemnym niebie (0.3 e-/s) D5100 potrzebuje ~2.5× czasu ASI2600 – prawie wyłącznie przez prąd
+ciemny; pod jasnym niebem (5 e-/s) różnica spada do ~9 %.
+
 ## Poza potokiem
 
 ### snr_vs_iso(name)
