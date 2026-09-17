@@ -1,26 +1,45 @@
-function out = sensor_fit(data, anchor = [])
-    % data:   [ISO shutter average sigma] rows from stats/<camera>.csv
-    % anchor: optional struct('iso', <setting>, 'egain', <DN/e->). When given, egain is taken
-    %         from the dark signal rate (DN/s scales with egain, dark current in e-/s does not)
-    %         scaled to the anchor, instead of from the photon-transfer slope. Use it for
-    %         cameras whose darks carry too little signal for photon transfer (cooled / low
-    %         dark current sensors); the anchor ISO should be one where the dark rate is
-    %         well measured.
+function out = sensor_fit(data, min_setting = [])
+    % data:        [ISO shutter average sigma] rows from stats/<camera>.csv
+    % min_setting: lowest ISO/gain to analyse. Default: chosen automatically - the lowest
+    %              setting from which the photon-transfer slope is significant for every
+    %              higher setting (slope / its standard error >= T_MIN). Low settings have too
+    %              little dark signal for a usable slope and are not used in astrophotography
+    %              anyway. Pass a value to override, 0 to keep everything.
+    T_MIN = 10;   % slope significance threshold, ~ correlation > 0.95 on 5+ points
+
     IDX_ISO     = 1;
     IDX_SHUTTER = 2;
     IDX_AVERAGE = 3;
     IDX_SIGMA   = 4;
 
     ISO = unique(data(:, IDX_ISO))';
-    #ISO = ISO(find(ISO < 1600));
-    #ISO = ISO(1:3:end);
-    #ISO = ISO(find(ISO > 500));
-    #ISO = ISO(1:4);
+
+    % significance of the photon-transfer slope for every setting
+    tstat = arrayfun(@(iso) slope_tstat(data(data(:, IDX_ISO) == iso, :)), ISO);
+
+    if isempty(min_setting)
+        bad = find(tstat < T_MIN, 1, 'last');
+        if isempty(bad)
+            min_setting = ISO(1);
+        elseif bad == numel(ISO)
+            error('sensor_fit: photon-transfer slope not significant at any setting (max t = %.1f)', max(tstat));
+        else
+            min_setting = ISO(bad + 1);
+        end
+    end
+    out = {};
+    out.min_setting = min_setting;
+    out.excluded    = ISO(ISO < min_setting);
+    out.tstat_all   = tstat;
+    ISO = ISO(ISO >= min_setting);
+    if ~isempty(out.excluded)
+        printf('sensor_fit: excluded settings below %g (slope not significant): %s\n', min_setting, mat2str(out.excluded));
+    end
+
     COLS = length(ISO);
     ROWS = max(arrayfun(@(iso) sum(data(:, IDX_ISO) == iso), ISO));
 
     % ISO settings may have a different number of exposures; missing entries are NaN
-    out = {};
     out.shutter = nan(ROWS, COLS);
     out.average = nan(ROWS, COLS);
     out.sigma   = nan(ROWS, COLS);
@@ -47,29 +66,9 @@ function out = sensor_fit(data, anchor = [])
     out.dark_rate = out.shutter2average(1, :)';   % DN/s, = dark_current * egain
 
     % Photon transfer: slope = egain, intercept = read noise^2
-    out.egain_pt    = out.average2sigma2(1, :)'; % DN / e-
+    out.egain       = out.average2sigma2(1, :)'; % DN / e-
     out.read_noise2 = out.average2sigma2(2, :)'; % DN^2
-
-    if isempty(anchor)
-        out.egain = out.egain_pt;
-        out.egain_source = 'photon transfer';
-        out.egain_rel = out.dark_rate / out.dark_rate(end);
-    else
-        k = find(ISO == anchor.iso);
-        if isempty(k)
-            error('sensor_fit: anchor ISO %g not in data', anchor.iso);
-        end
-        out.egain_rel = out.dark_rate / out.dark_rate(k);
-        out.egain = out.egain_rel * anchor.egain;
-        out.egain_source = sprintf('dark rate, anchored at %g = %g DN/e-', anchor.iso, anchor.egain);
-        % with egain fixed, read noise^2 is the mean offset of sigma^2 above the Poisson term
-        for i = 1:COLS
-            ok = ~isnan(out.average(:, i));
-            out.read_noise2(i) = mean(out.sigma2(ok, i) - out.egain(i) * out.average(ok, i));
-        end
-    end
-    out.anchor = anchor;
-    out.read_noise = sqrt(out.read_noise2);      % DN
+    out.read_noise  = sqrt(out.read_noise2);     % DN
 
     out.egain2read_noise = polyfit_cols(out.egain, out.read_noise, 1);
 
@@ -108,4 +107,19 @@ function out = polyfit_cols(x, y, n)
         c = polyfit(x(ok, i), y(ok, i), n);
         out(:, i) = c;
     end
+end
+
+% slope / standard error of the sigma^2(average) fit for one setting's rows
+function t = slope_tstat(rows)
+    x = rows(:, 3) - polyfit(rows(:, 2), rows(:, 3), 1)(2);   % average - bias
+    y = rows(:, 4) .^ 2;
+    n = numel(x);
+    if n < 3
+        t = 0;
+        return;
+    end
+    p = polyfit(x, y, 1);
+    res = y - polyval(p, x);
+    se = sqrt(sum(res .^ 2) / (n - 2) / sum((x - mean(x)) .^ 2));
+    t = p(1) / se;
 end

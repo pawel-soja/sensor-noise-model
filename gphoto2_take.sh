@@ -5,8 +5,8 @@
 set -euo pipefail
 
 # Shutter values as reported by: gphoto2 --get-config capturesettings/shutterspeed
-# Low ISO: dark current is only ~0.015 DN/s at ISO 100 (Z6 II), so the dark rate (used for
-# egain, see sensor_fit anchor) needs several minutes to rise clearly above the noise.
+# Low ISO: dark current is only ~0.015 DN/s at ISO 100 (Z6 II); the photon-transfer slope needs
+# a clear dark signal, so low ISO needs minutes of exposure (or gets excluded by sensor_fit).
 # 60 s and longer require "Extended shutter speeds (M)" enabled in the camera (Z6 II: d6).
 # High ISO: noise grows fast, a few points are enough.
 ISOS_LOW=(100 200 400 640 800 1600)
