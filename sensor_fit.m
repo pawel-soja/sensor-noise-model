@@ -1,4 +1,11 @@
-function out = sensor_fit(data)
+function out = sensor_fit(data, anchor = [])
+    % data:   [ISO shutter average sigma] rows from stats/<camera>.csv
+    % anchor: optional struct('iso', <setting>, 'egain', <DN/e->). When given, egain is taken
+    %         from the dark signal rate (DN/s scales with egain, dark current in e-/s does not)
+    %         scaled to the anchor, instead of from the photon-transfer slope. Use it for
+    %         cameras whose darks carry too little signal for photon transfer (cooled / low
+    %         dark current sensors); the anchor ISO should be one where the dark rate is
+    %         well measured.
     IDX_ISO     = 1;
     IDX_SHUTTER = 2;
     IDX_AVERAGE = 3;
@@ -37,9 +44,32 @@ function out = sensor_fit(data)
     out.shutter2average = polyfit_cols(out.shutter, out.average, 1);
     out.average2sigma2  = polyfit_cols(out.average, out.sigma2, 1);
 
-    out.egain       = out.average2sigma2(1, :)'; % DN / e-
+    out.dark_rate = out.shutter2average(1, :)';   % DN/s, = dark_current * egain
+
+    % Photon transfer: slope = egain, intercept = read noise^2
+    out.egain_pt    = out.average2sigma2(1, :)'; % DN / e-
     out.read_noise2 = out.average2sigma2(2, :)'; % DN^2
-    out.read_noise  = sqrt(out.read_noise2);     % DN
+
+    if isempty(anchor)
+        out.egain = out.egain_pt;
+        out.egain_source = 'photon transfer';
+        out.egain_rel = out.dark_rate / out.dark_rate(end);
+    else
+        k = find(ISO == anchor.iso);
+        if isempty(k)
+            error('sensor_fit: anchor ISO %g not in data', anchor.iso);
+        end
+        out.egain_rel = out.dark_rate / out.dark_rate(k);
+        out.egain = out.egain_rel * anchor.egain;
+        out.egain_source = sprintf('dark rate, anchored at %g = %g DN/e-', anchor.iso, anchor.egain);
+        % with egain fixed, read noise^2 is the mean offset of sigma^2 above the Poisson term
+        for i = 1:COLS
+            ok = ~isnan(out.average(:, i));
+            out.read_noise2(i) = mean(out.sigma2(ok, i) - out.egain(i) * out.average(ok, i));
+        end
+    end
+    out.anchor = anchor;
+    out.read_noise = sqrt(out.read_noise2);      % DN
 
     out.egain2read_noise = polyfit_cols(out.egain, out.read_noise, 1);
 
@@ -67,7 +97,7 @@ function out = sensor_fit(data)
 
     out.egain2iso   = polyfit_cols(out.egain, out.iso', 1);
 
-    out.dark_current = mean(out.shutter2average(1, :) ./ out.egain'); % e-/s/pix
+    out.dark_current = mean(out.dark_rate ./ out.egain); % e-/s/pix
 end
 
 function out = polyfit_cols(x, y, n)
