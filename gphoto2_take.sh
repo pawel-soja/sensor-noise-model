@@ -10,7 +10,7 @@ set -euo pipefail
 # 60 s and longer require "Extended shutter speeds (M)" enabled in the camera (Z6 II: d6).
 # High ISO: noise grows fast, a few points are enough.
 ISOS_LOW=(100 200 400 640 800 1600)
-TIMES_LOW=("0,0010s" "0,1000s" "1,0000s" "4,0000s" "8,0000s" "15,0000s" "30,0000s" "60,0000s" "120,0000s" "300,0000s")
+TIMES_LOW=("0,0010s" "0,1000s" "1,0000s" "4,0000s" "8,0000s" "15,0000s" "30,0000s" "60,0000s")
 ISOS_HIGH=(3200 6400 12800 25600)
 TIMES_HIGH=("0,0010s" "1,0000s" "4,0000s" "15,0000s")
 FRAMES=2                                 # frames2stats.py needs 2 per combination

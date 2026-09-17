@@ -195,11 +195,14 @@ Full model:
 
 ### Nikon Z6 II
 
-`sensor_fit` drops ISO < 1600 (photon-transfer slope not significant – 0.015 DN/s of dark current at
-ISO 100 is too little signal). Even above that the result is physically implausible: egain 70–1100 DN/e-
-(expected ~5–40), read noise 0.05 e-. The variance of the frame difference grows with exposure ~20×
-faster than Poisson predicts – most likely temperature drift between the two frames of a pair times
-the spread of hot-pixel dark current. From darks this camera reliably yields bias (1008 DN), read noise
-in DN (1.6 → 113 DN) and the dark signal rate in DN/s; egain needs flats. The model is not in the database.
+`sensor_fit` drops ISO < 1600 (photon-transfer slope not significant), but even above that the result
+is physically impossible: egain 70–1100 DN/e- (expected ~5–40), i.e. a 14-bit full scale of 15 e- at
+ISO 25600 and a read noise of 0.05 e-. Cause: the camera applies a black-level clamp – it subtracts the
+mean dark current measured on shielded reference pixels and adds a constant 1008 DN. The dark mean
+therefore grows ~20× slower than its noise implies (ISO 25600: +42 DN in 15 s, but 216 DN of noise ≈
+19 e- of charge), and photon transfer loses its X axis. The noise itself is fine: uniform across the
+frame, variance ∝ time and ∝ egain², consistently ~1.2 e-/s of dark current. The D5100 (old design,
+bias 128, no clamp) does not have this problem. From Z6 II darks the reliable quantities are bias, read
+noise in DN (1.6 → 113 DN) and the variance growth rate; egain needs flats. The model is not in the database.
 
 ![Z6 II – input data](plots/Nikon_Z6_2_input.png)

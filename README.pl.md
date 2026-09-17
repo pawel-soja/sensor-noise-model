@@ -195,8 +195,14 @@ Pełny model:
 
 ### Nikon Z6 II
 
-Na razie tylko dane wejściowe – 5 czasów do 8 s to za mało, żeby dopasować prąd ciemny
-(sensor ma ok. 0.1 e-/s/px) i model jest niestabilny. Widoczne dual conversion gain:
-read noise przy ISO 800 (2.6 DN) niższy niż przy ISO 400 (4.2 DN).
+`sensor_fit` odrzuca ISO < 1600 (nachylenie photon transfer nieistotne), ale i powyżej wynik jest
+fizycznie niemożliwy: egain 70–1100 DN/e- (oczekiwane ~5–40), czyli pełna skala 14 bit = 15 e-
+przy ISO 25600 i read noise 0.05 e-. Przyczyna: aparat robi black-level clamp – odejmuje od klatki
+średni prąd ciemny zmierzony na zasłoniętych pikselach referencyjnych i dodaje stałą 1008 DN.
+Średnia darka rośnie więc ~20× wolniej niż wynikałoby z jego szumu (przy ISO 25600: +42 DN w 15 s,
+a szum 216 DN ≈ 19 e- ładunku), a photon transfer traci oś X. Sam szum jest w porządku: rozkład
+jednorodny po klatce, wariancja ∝ czas i ∝ egain², spójnie ~1.2 e-/s prądu ciemnego. D5100 (stara
+architektura, bias 128, bez clampu) tego problemu nie ma. Z darków Z6 II wiarygodne są: bias, read
+noise w DN (1.6 → 113 DN) i tempo wzrostu wariancji; do egain potrzebne są flaty. Model nie jest w bazie.
 
 ![Z6 II – dane wejściowe](plots/Nikon_Z6_2_input.png)
