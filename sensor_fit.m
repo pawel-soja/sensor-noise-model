@@ -10,18 +10,22 @@ function out = sensor_fit(data)
     #ISO = ISO(find(ISO > 500));
     #ISO = ISO(1:4);
     COLS = length(ISO);
-    ROWS = length(find(data(:, IDX_ISO) == ISO(1)));
+    ROWS = max(arrayfun(@(iso) sum(data(:, IDX_ISO) == iso), ISO));
 
+    % ISO settings may have a different number of exposures; missing entries are NaN
     out = {};
-    out.shutter = zeros(ROWS, COLS);
+    out.shutter = nan(ROWS, COLS);
+    out.average = nan(ROWS, COLS);
+    out.sigma   = nan(ROWS, COLS);
 
     for n = 1:COLS
         iso = ISO(n);
         idx = data(:, IDX_ISO) == iso;
+        k = sum(idx);
 
-        out.shutter(:, n) = data(idx, IDX_SHUTTER);
-        out.average(:, n) = data(idx, IDX_AVERAGE);
-        out.sigma(:, n)   = data(idx, IDX_SIGMA);
+        out.shutter(1:k, n) = data(idx, IDX_SHUTTER);
+        out.average(1:k, n) = data(idx, IDX_AVERAGE);
+        out.sigma(1:k, n)   = data(idx, IDX_SIGMA);
     end
 
     pf = polyfit_cols(out.shutter, out.average, 1);
@@ -70,7 +74,8 @@ function out = polyfit_cols(x, y, n)
     N = size(x)(2);
     out = zeros(2, N);
     for i=1:N
-        c = polyfit(x(:, i), y(:, i), n);
+        ok = ~isnan(x(:, i)) & ~isnan(y(:, i));
+        c = polyfit(x(ok, i), y(ok, i), n);
         out(:, i) = c;
     end
 end
