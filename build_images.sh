@@ -7,6 +7,7 @@ cd "$(dirname "$0")"
 EXTRA=(
   "sensor_plot_iso_limit(sensor_characterize('Nikon_D5100'), 1600);"
   "sensor_validate('Nikon_D5100');"
+  "sensor_plot_sub_length({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, [0.03 0.3]);"
 )
 
 cmd=""

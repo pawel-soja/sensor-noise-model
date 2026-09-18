@@ -124,12 +124,21 @@ $$t = \frac{g}{\mathrm{se}(g)}, \qquad
 
 - Read noise in electrons: $\sigma_r[\text{e-}] = \sigma_r[\text{DN}] / g$.
 - Full well / clipping in e-: $2^{\text{bits}} / g$.
-- `sensor_compare`: for sky flux $\Phi$ [e-/s/px] and sub length $t$,
+- `sensor_compare`: for sky flux $\Phi$ [e-/s/px], sub length $t$ and accepted read-noise share $p$
+  (default 0.1),
 
 $$\text{var/s} = \Phi + D + \frac{\sigma_r[\text{e-}]^2}{t}, \qquad
-t_{\min} = \frac{10 \sigma_r[\text{e-}]^2}{\Phi + D}$$
+t_{\min} = \frac{\sigma_r[\text{e-}]^2}{p (\Phi + D)}$$
 
   Relative integration time for equal SNR is the ratio of var/s between cameras.
+- `sensor_plot_sub_length`: total integration time for a given SNR with subs of length $t$,
+  relative to an ideal noiseless camera $T_{\text{ideal}}$ (no dark current, no read noise; a finite
+  time, $\propto \Phi$):
+
+$$\frac{T(t)}{T_{\text{ideal}}} = \frac{\text{var/s}(t)}{\Phi} = \frac{\Phi + D + \sigma_r[\text{e-}]^2 / t}{\Phi}$$
+
+  For $t \to \infty$ each curve approaches its own limit $(\Phi + D)/\Phi$ – the cost of dark current
+  alone; at $t = t_{\min}$ it is $(1 + p)$ times that limit.
 - `sensor_simulate` (inverse): $\overline{S} = g \overline{P} + b$,
   $\sigma = \sqrt{g^2 \mathrm{var}(P) + \sigma_r(g)^2}$ with $P \sim \text{Poisson}(D t)$.
 
@@ -147,7 +156,7 @@ The `fits/` directory is wiped before conversion.
 
 ### build_images.sh
 Regenerates every PNG in `plots/`: `sensor_characterize` for each `stats/*.csv` plus the extra
-figures listed in `EXTRA` (`sensor_plot_iso_limit` for the D5100, `sensor_validate`).
+figures listed in `EXTRA` (`sensor_plot_iso_limit` for the D5100, `sensor_validate`, `sensor_plot_sub_length`).
 Run it after changing the Octave scripts. Figure windows pop up briefly (qt renders the PNG 1:1
 with the screen); without `DISPLAY` it falls back to gnuplot (fonts less faithful).
 
@@ -218,12 +227,12 @@ Generates synthetic statistics from a model (inverse of `sensor_fit`).
 Round-trip test: `sensor_models` → `sensor_simulate` → `sensor_fit` → `sensor_plot`.
 The result should reproduce the input model parameters.
 
-### sensor_compare(cameras, sky = 0.3, t = 60)
+### sensor_compare(cameras, sky = 0.3, t = 60, penalty = 0.1)
 Comparison table of cameras from `sensor_models` for a given sky flux [e-/s/px] and sub length [s]
 (same optics and QE). Per camera: ISO/gain (default: lowest read noise in e-, or forced with
 `{name, setting}`), cgain, read noise [e-], dark current, `t_min` – sub length at which read noise²
-is 10 % of the sky+dark variance, noise variance per second of integration `sky + D + RN²/t` and the
-resulting relative integration time for equal SNR.
+is `penalty` of the sky+dark variance (i.e. costs `penalty` more total time), noise variance per second
+of integration `sky + D + RN²/t` and the resulting relative integration time for equal SNR.
 ```octave
 sensor_compare({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, 0.3, 60)
 ```
@@ -234,6 +243,16 @@ Nikon_D5100          1600    5.90    2.04    0.4012   59.4   0.771  2.50x
 ```
 Under a dark sky (0.3 e-/s) the D5100 needs ~2.5× the time of the ASI2600 – almost entirely due to
 dark current; under a bright sky (5 e-/s) the difference drops to ~9 %.
+
+### sensor_plot_sub_length(cameras, skies = [0.03 0.3], t = logspace(0, log10(60), 61), penalty = 0.1)
+Total integration time for equal SNR vs sub length, relative to an ideal noiseless camera (see
+[formulas](#derived-quantities)). Shows two costs at once: dark current (height of the dashed long-sub
+limit) and read noise (curve rising above it for short subs). One panel per sky flux in `skies`, one
+line per camera (`cameras` as in `sensor_compare`), circles mark `t_min` – the sub length where read
+noise costs `penalty` more time than the dashed limit. Log Y axis. Saved to `plots/sub_length.png`.
+```octave
+sensor_plot_sub_length({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, [0.03 0.3])
+```
 
 ## Outside the pipeline
 
@@ -263,6 +282,24 @@ Full model:
 
 ![ASI2600MM – model](plots/ASI2600MM_5deg_model.png)
 ![ASI2600MM – input data](plots/ASI2600MM_5deg_input.png)
+
+### Sub length vs total integration time
+
+Short subs cost integration time because every frame adds its read noise; dark current costs time
+regardless of sub length. Both relative to an ideal noiseless camera (same optics and QE):
+
+- Dark sky / narrowband (0.03 e-/s/px): the D5100 at ISO 1600 needs 14× the time even with perfect
+  subs (dark current 0.40 e-/s is 13× the sky), the ASI2600 1.06×. With 10 s subs the ASI2600 needs
+  2.3×, the D5100 28×. Neither camera reaches its `t_min` below 60 s (120 s and 97 s).
+- Typical dark sky (0.3 e-/s/px): the D5100 limit is 2.3×, the ASI2600 1.01×; the ASI2600 is within
+  10 % of its limit from ~13 s subs, the D5100 from ~60 s. With 10 s subs: ASI2600 1.1×, D5100 3.7×.
+
+The 10 % read-noise share (`penalty`) is the usual rule of thumb: it costs 10 % of total time, or ~5 %
+of SNR at equal time. 5 % is a stricter common choice, but it doubles `t_min` – under 0.03 e-/s that
+means 4-minute subs for the ASI2600, where guiding, satellites and saturation start to cost more than
+the read noise saved.
+
+![Integration time vs sub length](plots/sub_length.png)
 
 ### Nikon Z6 II
 

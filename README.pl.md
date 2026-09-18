@@ -125,12 +125,21 @@ $$t = \frac{g}{\mathrm{se}(g)}, \qquad
 
 - Read noise w elektronach: $\sigma_r[\text{e-}] = \sigma_r[\text{DN}] / g$.
 - Pełna skala / clipping w e-: $2^{\text{bity}} / g$.
-- `sensor_compare`: dla strumienia nieba $\Phi$ [e-/s/px] i długości klatki $t$,
+- `sensor_compare`: dla strumienia nieba $\Phi$ [e-/s/px], długości klatki $t$ i akceptowanego udziału
+  read noise $p$ (domyślnie 0.1),
 
 $$\text{var/s} = \Phi + D + \frac{\sigma_r[\text{e-}]^2}{t}, \qquad
-t_{\min} = \frac{10 \sigma_r[\text{e-}]^2}{\Phi + D}$$
+t_{\min} = \frac{\sigma_r[\text{e-}]^2}{p (\Phi + D)}$$
 
   Względny czas integracji do tego samego SNR to stosunek var/s między kamerami.
+- `sensor_plot_sub_length`: całkowity czas integracji do zadanego SNR przy klatkach o długości $t$,
+  względem idealnej bezszumowej kamery $T_{\text{ideal}}$ (bez prądu ciemnego i read noise; to skończony
+  czas, $\propto \Phi$):
+
+$$\frac{T(t)}{T_{\text{ideal}}} = \frac{\text{var/s}(t)}{\Phi} = \frac{\Phi + D + \sigma_r[\text{e-}]^2 / t}{\Phi}$$
+
+  Dla $t \to \infty$ każda krzywa dąży do własnej granicy $(\Phi + D)/\Phi$ – koszt samego prądu
+  ciemnego; przy $t = t_{\min}$ jest $(1 + p)$ razy powyżej tej granicy.
 - `sensor_simulate` (odwrotność): $\overline{S} = g \overline{P} + b$,
   $\sigma = \sqrt{g^2 \mathrm{var}(P) + \sigma_r(g)^2}$, gdzie $P \sim \text{Poisson}(D t)$.
 
@@ -148,7 +157,7 @@ Katalog `fits/` jest czyszczony przed konwersją.
 
 ### build_images.sh
 Przegenerowuje wszystkie PNG w `plots/`: `sensor_characterize` dla każdego `stats/*.csv` plus
-dodatkowe figury z listy `EXTRA` (`sensor_plot_iso_limit` dla D5100, `sensor_validate`).
+dodatkowe figury z listy `EXTRA` (`sensor_plot_iso_limit` dla D5100, `sensor_validate`, `sensor_plot_sub_length`).
 Odpalaj po zmianach w skryptach Octave. Okna wykresów pojawiają się na chwilę (qt renderuje PNG
 1:1 z ekranem); bez `DISPLAY` używa gnuplota (czcionki mniej wierne).
 
@@ -219,12 +228,13 @@ Generuje syntetyczne statystyki z modelu (odwrotność `sensor_fit`).
 Test round-trip: `sensor_models` → `sensor_simulate` → `sensor_fit` → `sensor_plot`.
 Wynik powinien odtworzyć parametry wejściowego modelu.
 
-### sensor_compare(cameras, sky = 0.3, t = 60)
+### sensor_compare(cameras, sky = 0.3, t = 60, penalty = 0.1)
 Tabela porównawcza kamer z `sensor_models` dla zadanego strumienia nieba [e-/s/px] i długości klatki [s]
 (ta sama optyka i QE). Dla każdej kamery: ISO/gain (domyślnie z najniższym read noise w e-, albo
 wymuszone przez `{nazwa, ustawienie}`), cgain, read noise [e-], prąd ciemny, `t_min` – długość klatki,
-od której read noise² to 10 % wariancji nieba+darka, wariancja na sekundę integracji
-`sky + D + RN²/t` i wynikający z niej względny czas integracji do tego samego SNR.
+od której read noise² to `penalty` wariancji nieba+darka (czyli kosztuje `penalty` więcej czasu),
+wariancja na sekundę integracji `sky + D + RN²/t` i wynikający z niej względny czas integracji do tego
+samego SNR.
 ```octave
 sensor_compare({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, 0.3, 60)
 ```
@@ -235,6 +245,17 @@ Nikon_D5100          1600    5.90    2.04    0.4012   59.4   0.771  2.50x
 ```
 Przy ciemnym niebie (0.3 e-/s) D5100 potrzebuje ~2.5× czasu ASI2600 – prawie wyłącznie przez prąd
 ciemny; pod jasnym niebem (5 e-/s) różnica spada do ~9 %.
+
+### sensor_plot_sub_length(cameras, skies = [0.03 0.3], t = logspace(0, log10(60), 61), penalty = 0.1)
+Całkowity czas integracji do tego samego SNR w funkcji długości klatki, względem idealnej bezszumowej
+kamery (patrz [wzory](#wielkości-pochodne)). Pokazuje dwa koszty naraz: prąd ciemny (wysokość kreskowanej
+granicy długich klatek) i read noise (krzywa ponad nią przy krótkich klatkach). Jeden panel na strumień
+nieba z `skies`, jedna linia na kamerę (`cameras` jak w `sensor_compare`), kółka oznaczają `t_min` –
+długość klatki, przy której read noise kosztuje `penalty` więcej czasu niż kreskowana granica.
+Oś Y logarytmiczna. Zapis do `plots/sub_length.png`.
+```octave
+sensor_plot_sub_length({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, [0.03 0.3])
+```
 
 ## Poza potokiem
 
@@ -264,6 +285,24 @@ Pełny model:
 
 ![ASI2600MM – model](plots/ASI2600MM_5deg_model.png)
 ![ASI2600MM – dane wejściowe](plots/ASI2600MM_5deg_input.png)
+
+### Długość klatki a całkowity czas integracji
+
+Krótkie klatki kosztują czas integracji, bo każda dokłada swój read noise; prąd ciemny kosztuje czas
+niezależnie od długości klatki. Oba efekty względem idealnej bezszumowej kamery (ta sama optyka i QE):
+
+- Ciemne niebo / wąskopasmowo (0.03 e-/s/px): D5100 przy ISO 1600 potrzebuje 14× więcej czasu nawet
+  przy idealnych klatkach (prąd ciemny 0.40 e-/s to 13× niebo), ASI2600 1.06×. Przy klatkach 10 s
+  ASI2600 potrzebuje 2.3×, D5100 28×. Żadna kamera nie osiąga `t_min` poniżej 60 s (120 s i 97 s).
+- Typowe ciemne niebo (0.3 e-/s/px): granica D5100 to 2.3×, ASI2600 1.01×; ASI2600 jest w granicach
+  10 % od swojej granicy od ~13 s, D5100 od ~60 s. Przy klatkach 10 s: ASI2600 1.1×, D5100 3.7×.
+
+10 % udziału read noise (`penalty`) to typowa reguła kciuka: kosztuje 10 % czasu całkowitego albo ~5 %
+SNR przy tym samym czasie. 5 % to częsty ostrzejszy wybór, ale podwaja `t_min` – przy 0.03 e-/s to
+4-minutowe klatki dla ASI2600, gdzie prowadzenie, satelity i saturacja zaczynają kosztować więcej niż
+zaoszczędzony read noise.
+
+![Czas integracji vs długość klatki](plots/sub_length.png)
 
 ### Nikon Z6 II
 

@@ -1,4 +1,4 @@
-function out = sensor_compare(cameras, sky = 0.3, t = 60)
+function out = sensor_compare(cameras, sky = 0.3, t = 60, penalty = 0.1)
     % Integration-time comparison of camera models from sensor_models for one sky flux and
     % sub-exposure length, same optics and QE assumed.
     %
@@ -6,11 +6,12 @@ function out = sensor_compare(cameras, sky = 0.3, t = 60)
     %            (default: the setting with the lowest read noise in e-)
     %   sky:     sky + target flux [e-/s/pix]
     %   t:       sub-exposure length [s]
+    %   penalty: accepted read-noise share of the sky + dark variance for t_min (0.1 = 10 %)
     %
     % Noise variance per second of integration: sky + dark + read_noise^2 / t.
     % The required total time for equal SNR scales with that variance; the table reports it
-    % relative to the best camera. t_min is the sub length where read noise^2 is 10 % of the
-    % sky + dark variance (longer subs gain nothing from lower read noise).
+    % relative to the best camera. t_min is the sub length where read noise^2 is `penalty` of
+    % the sky + dark variance, i.e. the total time is (1 + penalty) x the long-sub limit.
     %
     % Example: sensor_compare({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, 0.3, 60)
 
@@ -50,7 +51,7 @@ function out = sensor_compare(cameras, sky = 0.3, t = 60)
         r.cgain        = camera.cgain(k);
         r.read_noise   = rn_e(k);
         r.dark_current = camera.dark_current;
-        r.t_min        = 10 * r.read_noise ^ 2 / (sky + r.dark_current);
+        r.t_min        = r.read_noise ^ 2 / (penalty * (sky + r.dark_current));
         r.var_per_s    = sky + r.dark_current + r.read_noise ^ 2 / t;
         r.rel_time     = NaN;
         out(end + 1) = r;
@@ -61,7 +62,7 @@ function out = sensor_compare(cameras, sky = 0.3, t = 60)
         out(i).rel_time = out(i).var_per_s / best;
     end
 
-    printf('\nSky %g e-/s/pix, subs %g s  (same optics and QE assumed)\n\n', sky, t);
+    printf('\nSky %g e-/s/pix, subs %g s, t_min for %g %% read noise  (same optics and QE assumed)\n\n', sky, t, penalty * 100);
     printf('%-18s %8s %9s %8s %10s %8s %10s %9s\n', ...
            'camera', 'setting', 'cgain', 'RN [e-]', 'D [e-/s]', 't_min', 'var/s', 'time');
     printf('%-18s %8s %9s %8s %10s %8s %10s %9s\n', ...
