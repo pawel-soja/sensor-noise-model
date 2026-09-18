@@ -27,6 +27,18 @@ function camera = sensor_models(name)
             camera.iso = [ 100 125 160 200 250 320 400 500 640 800 1000 1250 1600 2000 2500 3200 4000 5000 6400 ];
             camera.iso2cgain = @(iso) 0.0010196 * iso + 1.64578; # DN/e-
 
+        case "Nikon_Z6_2"
+            camera = {};
+            camera.name = "Nikon_Z6_2";
+            camera.cgain2read_noise = @(cgain) 0.0565112 * cgain + 2.04385; # DN
+            camera.dark_current = 0.00364071; # e-/s/pix
+            camera.bias = 1010; # DN
+            camera.cgain = [ 251.689 557.476 1047.46 ]; # DN/e-, settings >= 6400
+            camera.read_noise = [ 17.1048 32.187 61.7597 ]; # DN, per setting
+            camera.has_iso = 1; # if false, log10(iso / 100) * 200 = gain [0.1dB]
+            camera.iso = [ 6400 12800 25600 ];
+            camera.iso2cgain = @(iso) 0.0409939 * iso + 6.69884; # DN/e-
+
         otherwise
             error("sensor_models: unknown sensor '%s'", name);
     end
