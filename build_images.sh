@@ -1,5 +1,5 @@
 #!/bin/bash
-# Regenerate every PNG in plots/: model plots for each stats/*.csv, plus the extra figures below.
+# Regenerate every PNG in plots/: model plots for each stats/*_dark.csv, plus the extra figures below.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -11,8 +11,8 @@ EXTRA=(
 )
 
 cmd=""
-for csv in stats/*.csv; do
-  camera=$(basename "$csv" .csv)
+for csv in stats/*_dark.csv; do
+  camera=$(basename "$csv" _dark.csv)
   cmd+="sensor_characterize('$camera'); "
 done
 for e in "${EXTRA[@]}"; do

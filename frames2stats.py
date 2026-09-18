@@ -2,9 +2,10 @@
 
 # https://www.brisk.org.uk/photog/d3readn.html
 #
-# Usage: ./frames2stats.py [--win N] [--clip S] <camera>
-#   reads  frames/<camera>/**/*.fit[s]
-#   writes stats/<camera>.csv  (ISO;shutter;average;sigma)
+# Usage: ./frames2stats.py [--win N] [--clip S] <camera> <type>
+#   type: dark | flat
+#   reads  frames/<camera>/<type>/**/*.fit[s]
+#   writes stats/<camera>_<type>.csv  (ISO;shutter;average;sigma)
 #
 #   --win N   use only the central N x N px (default: whole frame)
 #   --clip S  ignore pixels further than S robust sigmas (MAD) from the median in either
@@ -39,13 +40,14 @@ def read_gain(header):
 
 ap = argparse.ArgumentParser()
 ap.add_argument('camera')
+ap.add_argument('type', choices=['dark', 'flat'])
 ap.add_argument('--win', type=int, default=0, metavar='N', help='central crop size [px], 0 = whole frame')
 ap.add_argument('--clip', type=float, default=0, metavar='S', help='reject pixels beyond S robust sigmas, 0 = off')
 args = ap.parse_args()
 
 camera = args.camera
-frames_dir = os.path.join('frames', camera)
-stats_file = os.path.join('stats', camera + '.csv')
+frames_dir = os.path.join('frames', camera, args.type)
+stats_file = os.path.join('stats', camera + '_' + args.type + '.csv')
 
 files = glob.glob(os.path.join(frames_dir, '**', '*.fit'), recursive=True) + \
         glob.glob(os.path.join(frames_dir, '**', '*.fits'), recursive=True)

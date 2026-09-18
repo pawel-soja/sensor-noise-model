@@ -1,20 +1,20 @@
 #!/bin/bash
 # Convert DSLR RAW frames to FITS with Siril (keeps CFA data, ISOSPEED/EXPTIME headers).
 #
-# Usage: ./raw2fits.sh <camera>
-#   reads  frames/<camera>/raw/**/*.nef  (every directory containing RAW files)
-#   writes frames/<camera>/fits/<dir>_NNNNN.fit
+# Usage: ./raw2fits.sh <camera> <type>          type: dark | flat
+#   reads  frames/<camera>/<type>/raw/**/*.nef  (every directory containing RAW files)
+#   writes frames/<camera>/<type>/fits/<dir>_NNNNN.fit
 set -euo pipefail
 
 RAW_EXT='nef|cr2|cr3|arw|dng'
 
-if (( $# != 1 )); then
-  echo "usage: $0 <camera>" >&2
+if (( $# != 2 )); then
+  echo "usage: $0 <camera> <dark|flat>" >&2
   exit 1
 fi
 
-SRC=$(realpath "frames/$1/raw")
-OUT=$(realpath "frames/$1")/fits
+SRC=$(realpath "frames/$1/$2/raw")
+OUT=$(realpath "frames/$1/$2")/fits
 
 # Siril keeps quotes in -out= literally, so the path must not contain spaces
 if [[ "$OUT" == *" "* ]]; then

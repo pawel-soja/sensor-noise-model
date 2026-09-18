@@ -9,50 +9,53 @@ Method: https://www.brisk.org.uk/photog/d3readn.html
 ## Directory layout
 
 ```
-frames/<camera>/          dark frames in FITS (astro cameras write here directly)
-frames/<camera>/raw/      DSLR: RAW files (NEF etc.), subdirectories allowed
-frames/<camera>/fits/     DSLR: FITS produced by raw2fits.sh
-stats/<camera>.csv        statistics from frames2stats.py
-plots/<camera>_*.png      plots saved automatically by sensor_plot
+frames/<camera>/<type>/        <type> = dark | flat (light in the future)
+frames/<camera>/<type>/*.fits  astro cameras write FITS here directly (subdirectories allowed)
+frames/<camera>/<type>/raw/    DSLR: RAW files (NEF etc.), subdirectories allowed
+frames/<camera>/<type>/fits/   DSLR: FITS produced by raw2fits.sh
+stats/<camera>_<type>.csv      statistics from frames2stats.py
+plots/<camera>_*.png           plots saved automatically by sensor_plot
 ```
 
 `<camera>` is the key throughout the pipeline: frames directory, CSV file,
-`analysis.name` and the `case` in `sensor_models.m`.
+`analysis.name` and the `case` in `sensor_models.m`. The noise model below is derived from
+`dark`; `flat` frames are only captured for now (photon transfer with real light, e.g. for cameras
+with a black-level clamp like the Z6 II).
 
 ## Pipeline
 
 ```
-frames/<camera>/raw/**/*.nef  (DSLR)
-  │  ./gphoto2_take.sh          capture over USB (optional)
-  │  ./raw2fits.sh <camera>     RAW → FITS (Siril)
+frames/<camera>/dark/raw/**/*.nef  (DSLR)
+  │  ./gphoto2_take_darks.sh          capture over USB (optional)
+  │  ./raw2fits.sh <camera> dark       RAW → FITS (Siril)
   ▼
-frames/<camera>/**/*.fit[s]   (frame pairs for every ISO × exposure)
-  │  ./frames2stats.py <camera>
+frames/<camera>/dark/**/*.fit[s]   (frame pairs for every ISO × exposure)
+  │  ./frames2stats.py <camera> dark
   ▼
-stats/<camera>.csv            ISO; shutter [s]; average [DN]; sigma [DN]
+stats/<camera>_dark.csv            ISO; shutter [s]; average [DN]; sigma [DN]
   │  sensor_characterize('<camera>')
   │    ├─ sensor_fit          linear fits → analysis struct
   │    ├─ sensor_plot         plots (fig 1: input data, fig 2: model) → plots/<camera>_{input,model}.png
   │    └─ sensor_print_model  prints ready-to-paste `camera` struct
   ▼
-sensor_models.m               paste the printed struct as a new `case`
+sensor_models.m                    paste the printed struct as a new `case`
 ```
 
 ## Step by step – new camera
 
 1. Take pairs of dark frames for every ISO/gain × exposure time combination
    (at least 2 frames per combination, several exposures from very short to long).
-   DSLR over USB: set `ISOS`/`TIMES` in `gphoto2_take.sh` and run `./gphoto2_take.sh`
-   – it writes `frames/<camera>/raw/dark_iso<ISO>_<time>_<n>.nef`, e.g. `dark_iso800_0-01s_2.nef`
+   DSLR over USB: set `ISOS`/`TIMES` in `gphoto2_take_darks.sh` and run `./gphoto2_take_darks.sh`
+   – it writes `frames/<camera>/dark/raw/dark_iso<ISO>_<time>_<n>.nef`, e.g. `dark_iso800_0-01s_2.nef`
    (time in seconds with the dot replaced by `-`; camera name from `gphoto2 --auto-detect`).
-2. Astro camera: put the FITS files in `frames/<camera>/` (subdirectories allowed – the script searches recursively).
-   DSLR: put RAW files in `frames/<camera>/raw/` and convert:
+2. Astro camera: put the FITS files in `frames/<camera>/dark/` (subdirectories allowed – the script searches recursively).
+   DSLR: put RAW files in `frames/<camera>/dark/raw/` and convert:
    ```sh
-   ./raw2fits.sh <camera>            # → frames/<camera>/fits/
+   ./raw2fits.sh <camera> dark            # → frames/<camera>/dark/fits/
    ```
 3. Compute statistics:
    ```sh
-   ./frames2stats.py <camera>        # → stats/<camera>.csv
+   ./frames2stats.py <camera> dark        # → stats/<camera>_dark.csv
    ```
    Gain is read from the `ISOSPEED` (DSLR) or `GAIN` (astro camera) header keyword.
    By default the whole frame is used with no pixel selection; `--win`/`--clip` are only for
@@ -144,26 +147,36 @@ $$\frac{T(t)}{T_{\text{ideal}}} = \frac{\text{var/s}(t)}{\Phi} = \frac{\Phi + D 
 
 ## Scripts
 
-### gphoto2_take.sh
+### gphoto2_take_darks.sh
 Detects the single connected camera (`gphoto2 --auto-detect`), switches to RAW and for every
-`ISOS` × `TIMES` combination takes `FRAMES` (default 2) frames into `frames/<camera>/raw/`.
+`ISOS` × `TIMES` combination takes `FRAMES` (default 2) frames into `frames/<camera>/dark/raw/`.
 `TIMES` values use the format reported by `gphoto2 --get-config capturesettings/shutterspeed`.
+Existing files are skipped, so a run can be resumed or extended.
 
-### raw2fits.sh <camera>
-Finds every directory with RAW files under `frames/<camera>/raw/` and converts them with Siril
-(no debayer, 32 bit) into `frames/<camera>/fits/<dir>_NNNNN.fit`. `ISOSPEED`/`EXPTIME` headers are preserved.
+### gphoto2_take_flats.sh
+Same for flats (`frames/<camera>/flat/raw/flat_iso<ISO>_<time>_<n>.nef`) with an evenly lit panel in
+front of the lens. The exposure series should span a few % to ~70 % of full scale at every ISO
+without clipping – check the longest time of each group with a test frame first and adjust panel
+brightness or aperture. Capture only for now; the analysis pipeline uses darks.
+
+Both scripts are thin config wrappers around `gphoto2_capture.sh` (camera detection, plan of missing
+frames, confirmation with time estimate, capture loop).
+
+### raw2fits.sh <camera> <dark|flat>
+Finds every directory with RAW files under `frames/<camera>/<type>/raw/` and converts them with Siril
+(no debayer, 32 bit) into `frames/<camera>/<type>/fits/<dir>_NNNNN.fit`. `ISOSPEED`/`EXPTIME` headers are preserved.
 The `fits/` directory is wiped before conversion.
 
 ### build_images.sh
-Regenerates every PNG in `plots/`: `sensor_characterize` for each `stats/*.csv` plus the extra
+Regenerates every PNG in `plots/`: `sensor_characterize` for each `stats/*_dark.csv` plus the extra
 figures listed in `EXTRA` (`sensor_plot_iso_limit` for the D5100, `sensor_validate`, `sensor_plot_sub_length`).
 Run it after changing the Octave scripts. Figure windows pop up briefly (qt renders the PNG 1:1
 with the screen); without `DISPLAY` it falls back to gnuplot (fonts less faithful).
 
-### frames2stats.py [--win N] [--clip S] <camera>
-Groups FITS files from `frames/<camera>/` by (ISO, EXPTIME), takes the first two frames of each group and computes
+### frames2stats.py [--win N] [--clip S] <camera> <dark|flat>
+Groups FITS files from `frames/<camera>/<type>/` by (ISO, EXPTIME), takes the first two frames of each group and computes
 `average` = mean, `sigma` = std(frame1 − frame2)/√2 over the whole frame.
-Writes `stats/<camera>.csv` (`;`-separated).
+Writes `stats/<camera>_<type>.csv` (`;`-separated).
 
 By default no pixels are rejected – camera noise has heavy tails (RTS pixels etc.) and that is
 real noise the model should describe. Options for faulty data only:
@@ -175,7 +188,7 @@ real noise the model should describe. Options for faulty data only:
 Parameters used: `Nikon_D5100` – `--win 4096 --clip 8`; `Nikon_Z6_2`, `ASI2600MM_5deg` – defaults.
 
 ### analysis = sensor_characterize(name, min_setting = [])
-Main entry point. Loads `stats/<name>.csv` → `sensor_fit` → `sensor_plot` → `sensor_print_model`.
+Main entry point. Loads `stats/<name>_dark.csv` → `sensor_fit` → `sensor_plot` → `sensor_print_model`.
 Returns the `analysis` struct (e.g. for `sensor_plot_iso_limit`).
 
 ### analysis = sensor_fit(data, min_setting = [])
