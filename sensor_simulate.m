@@ -14,7 +14,7 @@ function data = sensor_simulate(model, shutter = linspace(1/4000, 15, 5))
         row = [];
         for shu=shutter
 
-            egain = model.iso2egain(iso);
+            cgain = model.iso2cgain(iso);
 
             data_dark_current = poissrnd(shu * model.dark_current, 1024 * 1024, 1);
             dark_current = mean(data_dark_current);
@@ -26,8 +26,8 @@ function data = sensor_simulate(model, shutter = linspace(1/4000, 15, 5))
 
             row(IDX_ISO)     = iso;
             row(IDX_SHUTTER) = shu;
-            row(IDX_AVERAGE) = egain * dark_current + model.bias;
-            row(IDX_SIGMA)   = sqrt(egain .^ 2 * dark_current_sigma2 + model.egain2read_noise(egain) .^ 2);
+            row(IDX_AVERAGE) = cgain * dark_current + model.bias;
+            row(IDX_SIGMA)   = sqrt(cgain .^ 2 * dark_current_sigma2 + model.cgain2read_noise(cgain) .^ 2);
 
             data = [data; row];
         end

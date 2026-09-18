@@ -14,7 +14,7 @@ function out = sensor_compare(cameras, sky = 0.3, t = 60)
     %
     % Example: sensor_compare({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, 0.3, 60)
 
-    out = struct('name', {}, 'setting', {}, 'egain', {}, 'read_noise', {}, 'dark_current', {}, ...
+    out = struct('name', {}, 'setting', {}, 'cgain', {}, 'read_noise', {}, 'dark_current', {}, ...
                  't_min', {}, 'var_per_s', {}, 'rel_time', {});
 
     for i = 1:numel(cameras)
@@ -29,9 +29,9 @@ function out = sensor_compare(cameras, sky = 0.3, t = 60)
 
         settings = camera_settings(camera);
         if isfield(camera, 'read_noise')
-            rn_e = camera.read_noise ./ camera.egain;                        % measured, e-
+            rn_e = camera.read_noise ./ camera.cgain;                        % measured, e-
         else
-            rn_e = camera.egain2read_noise(camera.egain) ./ camera.egain;   % from linear fit, e-
+            rn_e = camera.cgain2read_noise(camera.cgain) ./ camera.cgain;   % from linear fit, e-
         end
 
         if isempty(setting)
@@ -47,7 +47,7 @@ function out = sensor_compare(cameras, sky = 0.3, t = 60)
         r = struct();
         r.name         = camera.name;
         r.setting      = settings(k);
-        r.egain        = camera.egain(k);
+        r.cgain        = camera.cgain(k);
         r.read_noise   = rn_e(k);
         r.dark_current = camera.dark_current;
         r.t_min        = 10 * r.read_noise ^ 2 / (sky + r.dark_current);
@@ -63,12 +63,12 @@ function out = sensor_compare(cameras, sky = 0.3, t = 60)
 
     printf('\nSky %g e-/s/pix, subs %g s  (same optics and QE assumed)\n\n', sky, t);
     printf('%-18s %8s %9s %8s %10s %8s %10s %9s\n', ...
-           'camera', 'setting', 'egain', 'RN [e-]', 'D [e-/s]', 't_min', 'var/s', 'time');
+           'camera', 'setting', 'cgain', 'RN [e-]', 'D [e-/s]', 't_min', 'var/s', 'time');
     printf('%-18s %8s %9s %8s %10s %8s %10s %9s\n', ...
            '', '', '[DN/e-]', '', '', '[s]', '[e-^2/s]', 'vs best');
     for r = out
         printf('%-18s %8g %9.3f %8.2f %10.4f %8.1f %10.3f %8.2fx\n', ...
-               r.name, r.setting, r.egain, r.read_noise, r.dark_current, r.t_min, r.var_per_s, r.rel_time);
+               r.name, r.setting, r.cgain, r.read_noise, r.dark_current, r.t_min, r.var_per_s, r.rel_time);
     end
     printf('\n');
 end

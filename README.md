@@ -2,7 +2,7 @@
 
 🇬🇧 English | [🇵🇱 Polski](README.pl.md)
 
-Derives a sensor noise model (bias, egain, read noise, dark current) from series of
+Derives a sensor noise model (bias, cgain, read noise, dark current) from series of
 dark frames taken at different ISO/gain settings and exposure times.
 Method: https://www.brisk.org.uk/photog/d3readn.html
 
@@ -63,6 +63,76 @@ sensor_models.m               paste the printed struct as a new `case`
    ```
 5. Copy the console output into `sensor_models.m` as a new `case`.
 
+## Noise model and formulas
+
+A dark frame pixel value $S$ [DN] at exposure time $t$ [s] is
+
+$$S = b + g\,(D\,t + n),$$
+
+where $b$ – bias [DN], $g$ – cgain [DN/e-], $D$ – dark current [e-/s/pix], $n$ – noise [e-].
+`cgain` is the *conversion gain* in DN per electron – the inverse of the FITS `EGAIN` keyword /
+Janesick's camera gain $K$ [e-/ADU].
+The dark signal $D t$ is Poisson (variance = mean in e-), read noise $\sigma_r$ [DN] is independent of $t$.
+
+### Input statistics (`frames2stats.py`)
+
+For every (ISO, $t$) pair of frames $F_1$, $F_2$:
+
+$$\overline{S} = \operatorname{mean}(F_1), \qquad
+\sigma = \frac{\operatorname{std}(F_1 - F_2)}{\sqrt{2}}$$
+
+Subtracting two frames removes the fixed pattern (hot pixels, bias structure); the difference has
+twice the temporal variance, hence $\sqrt 2$.
+
+### Fits per ISO/gain (`sensor_fit`)
+
+All fits are ordinary least squares (`polyfit(..., 1)`) over the exposure series of a single ISO.
+
+1. **Mean vs exposure** – bias and dark rate:
+
+$$\overline{S}(t) = \underbrace{g D}_{\text{dark\_rate}}\; t + \underbrace{b}_{\text{bias}}$$
+
+2. **Photon transfer** – variance vs bias-corrected mean. Since the dark signal in e- is Poisson,
+   $\operatorname{var}[\text{e-}] = D t$ and after scaling by $g$:
+
+$$\sigma^2 = g^2 D t + \sigma_r^2 = \underbrace{g}_{\text{cgain}}\;(\overline{S} - b) + \underbrace{\sigma_r^2}_{\text{read\_noise}^2}$$
+
+   so the slope of $\sigma^2$ against $(\overline{S} - b)$ is cgain [DN/e-] and the intercept is
+   read noise² [DN²]; $\sigma_r = \sqrt{\text{intercept}}$ [DN].
+
+3. **Dark current** – from the two slopes, averaged over all ISO (it does not depend on gain):
+
+$$D = \left\langle \frac{\text{dark\_rate}}{g} \right\rangle_{\text{ISO}} \quad [\text{e-/s/pix}]$$
+
+4. **Slope significance** (automatic `min_setting`): for $n$ points of the photon-transfer fit with
+   residuals $r_i$,
+
+$$t = \frac{g}{\operatorname{se}(g)}, \qquad
+\operatorname{se}(g) = \sqrt{\frac{\sum r_i^2 / (n-2)}{\sum (x_i - \bar x)^2}}, \quad x_i = \overline{S}_i - b$$
+
+   Settings below the lowest ISO from which all higher ones have $t \ge 10$ are dropped.
+
+### Fits across ISO/gain
+
+- `iso2cgain`: $g(\text{ISO}) = a \cdot \text{ISO} + c$; for astro cameras the 0.1 dB gain setting $G$ is first
+  converted to a linear scale $\text{ISO} = 100 \cdot 10^{G/200}$. Both models are tried on normalised $x$;
+  the one with the lower residual norm wins (`has_iso` = linear).
+- `cgain2read_noise`: $\sigma_r(g) = a\,g + c$ [DN].
+- `cgain2iso`: inverse of `iso2cgain`.
+
+### Derived quantities
+
+- Read noise in electrons: $\sigma_r[\text{e-}] = \sigma_r[\text{DN}] / g$.
+- Full well / clipping in e-: $2^{\text{bits}} / g$.
+- `sensor_compare`: for sky flux $\Phi$ [e-/s/px] and sub length $t$,
+
+$$\text{var/s} = \Phi + D + \frac{\sigma_r[\text{e-}]^2}{t}, \qquad
+t_{\min} = \frac{10\,\sigma_r[\text{e-}]^2}{\Phi + D}$$
+
+  Relative integration time for equal SNR is the ratio of var/s between cameras.
+- `sensor_simulate` (inverse): $\overline{S} = g\,\overline{P} + b$,
+  $\sigma = \sqrt{g^2 \operatorname{var}(P) + \sigma_r(g)^2}$ with $P \sim \text{Poisson}(D t)$.
+
 ## Scripts
 
 ### gphoto2_take.sh
@@ -100,13 +170,14 @@ Main entry point. Loads `stats/<name>.csv` → `sensor_fit` → `sensor_plot` �
 Returns the `analysis` struct (e.g. for `sensor_plot_iso_limit`).
 
 ### analysis = sensor_fit(data, min_setting = [])
-From the `[ISO shutter average sigma]` matrix computes, for every ISO:
+From the `[ISO shutter average sigma]` matrix computes, for every ISO (formulas in
+[Noise model and formulas](#noise-model-and-formulas)):
 - `bias` – intercept of the average(shutter) line
 - `dark_rate` [DN/s] – slope of the average(shutter) line
-- `egain` [DN/e-] – slope of the sigma²(average − bias) line (photon transfer)
+- `cgain` [DN/e-] – slope of the sigma²(average − bias) line (photon transfer)
 - `read_noise` [DN] – √ of that line's intercept
-- `dark_current` [e-/s/pix] – `dark_rate / egain`
-- `iso2egain`, `egain2read_noise` – linear fits between ISO and the parameters;
+- `dark_current` [e-/s/pix] – `dark_rate / cgain`
+- `iso2cgain`, `cgain2read_noise` – linear fits between ISO and the parameters;
   `has_iso` tells whether ISO scales linearly (DSLR) or logarithmically (0.1 dB gain, astro cameras)
 - `setting` – ISO/gain values as set on the camera (for labels)
 
@@ -122,12 +193,12 @@ Low ISO/gain is not used in astrophotography anyway. `min_setting` forces the th
 Result: D5100 – everything from ISO 100; ASI2600 – from gain 150; Z6 II – from ISO 1600.
 
 ### sensor_plot(analysis)
-Fig 1 – input data with fits. Fig 2 – egain, read noise vs ISO, SNR vs ISO.
+Fig 1 – input data with fits. Fig 2 – cgain, read noise vs ISO, SNR vs ISO.
 Lines coloured by log(ISO) (blue = lowest, red = highest) with a colorbar instead of a legend.
 Both figures are saved to `plots/<name>_input.png` and `plots/<name>_model.png`.
 
 ### sensor_plot_iso_limit(analysis, iso_limit)
-Egain and read noise vs ISO (log axis) with the range above `iso_limit` highlighted, where analog
+Conversion gain and read noise vs ISO (log axis) with the range above `iso_limit` highlighted, where analog
 gain no longer increases – saved to `plots/<name>_iso_limit.png`. E.g. for the D5100:
 ```octave
 sensor_plot_iso_limit(sensor_characterize('Nikon_D5100'), 1600)
@@ -138,7 +209,7 @@ Prints the `camera` struct as code to paste into `sensor_models.m`.
 
 ### camera = sensor_models(name)
 Database of fitted models (`"ASI2600MM_5deg"`, `"Nikon_D5100"`). Besides the linear
-fits it holds the measured `egain` and `read_noise` [DN] for every setting.
+fits it holds the measured `cgain` and `read_noise` [DN] for every setting.
 
 ### data = sensor_simulate(camera, shutter)
 Generates synthetic statistics from a model (inverse of `sensor_fit`).
@@ -150,14 +221,14 @@ The result should reproduce the input model parameters.
 ### sensor_compare(cameras, sky = 0.3, t = 60)
 Comparison table of cameras from `sensor_models` for a given sky flux [e-/s/px] and sub length [s]
 (same optics and QE). Per camera: ISO/gain (default: lowest read noise in e-, or forced with
-`{name, setting}`), egain, read noise [e-], dark current, `t_min` – sub length at which read noise²
+`{name, setting}`), cgain, read noise [e-], dark current, `t_min` – sub length at which read noise²
 is 10 % of the sky+dark variance, noise variance per second of integration `sky + D + RN²/t` and the
 resulting relative integration time for equal SNR.
 ```octave
 sensor_compare({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, 0.3, 60)
 ```
 ```
-camera            setting   egain  RN [e-]  D [e-/s]  t_min   var/s   time
+camera            setting   cgain  RN [e-]  D [e-/s]  t_min   var/s   time
 ASI2600MM_5deg        250   43.54    0.62    0.0017   12.7   0.308  1.00x
 Nikon_D5100          1600    5.90    2.04    0.4012   59.4   0.771  2.50x
 ```
@@ -176,7 +247,7 @@ Estimating stellar magnitude from ADU counts – notes from a Deneb measurement.
 
 ### Nikon D5100 – ISO above 1600 is digital only
 
-From ISO 1600 upwards egain (5.9 DN/e-) and read noise (12.1 DN = 2.1 e-) stop changing:
+From ISO 1600 upwards cgain (5.9 DN/e-) and read noise (12.1 DN = 2.1 e-) stop changing:
 analog gain ends at 1600, higher ISO is purely digital scaling.
 SNR does not improve, only highlight headroom and bit depth are lost – for astrophotography
 there is no point going above ISO 1600.
@@ -196,13 +267,13 @@ Full model:
 ### Nikon Z6 II
 
 `sensor_fit` drops ISO < 1600 (photon-transfer slope not significant), but even above that the result
-is physically impossible: egain 70–1100 DN/e- (expected ~5–40), i.e. a 14-bit full scale of 15 e- at
+is physically impossible: cgain 70–1100 DN/e- (expected ~5–40), i.e. a 14-bit full scale of 15 e- at
 ISO 25600 and a read noise of 0.05 e-. Cause: the camera applies a black-level clamp – it subtracts the
 mean dark current measured on shielded reference pixels and adds a constant 1008 DN. The dark mean
 therefore grows ~20× slower than its noise implies (ISO 25600: +42 DN in 15 s, but 216 DN of noise ≈
 19 e- of charge), and photon transfer loses its X axis. The noise itself is fine: uniform across the
-frame, variance ∝ time and ∝ egain², consistently ~1.2 e-/s of dark current. The D5100 (old design,
+frame, variance ∝ time and ∝ cgain², consistently ~1.2 e-/s of dark current. The D5100 (old design,
 bias 128, no clamp) does not have this problem. From Z6 II darks the reliable quantities are bias, read
-noise in DN (1.6 → 113 DN) and the variance growth rate; egain needs flats. The model is not in the database.
+noise in DN (1.6 → 113 DN) and the variance growth rate; cgain needs flats. The model is not in the database.
 
 ![Z6 II – input data](plots/Nikon_Z6_2_input.png)

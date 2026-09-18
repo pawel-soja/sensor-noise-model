@@ -3,14 +3,14 @@ function counts2mag()
     #value =
     target = 'Deneb';
     exposure = 0.01;
-    egain = 10.7;
+    cgain = 10.7;
     bias = 100;
     resolution = 1.7;
     value = 2000;
 
-    #photons = (value - bias) / resolution / egain / exposure; # photons / arcsec^2 / s
+    #photons = (value - bias) / resolution / cgain / exposure; # photons / arcsec^2 / s
     # 858 mean values at 10x10 pixels, 0.01 s exposure
-    photons = (858.5 - bias) / egain * 10^2 / (pi * (0.081/2) ^ 2) / 0.01; # photons/m2/s
+    photons = (858.5 - bias) / cgain * 10^2 / (pi * (0.081/2) ^ 2) / 0.01; # photons/m2/s
     photons
     lambda = 650e-9;
 

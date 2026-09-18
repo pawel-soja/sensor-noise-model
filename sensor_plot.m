@@ -23,9 +23,9 @@ function sensor_plot(analysis)
         xlabel('Average - Bias [DN]');
         ylabel('Sigma^2 [DN^2]');
         if isempty(p.excluded)
-            title('Photon transfer: slope = egain [DN/e-], intercept = read noise^2');
+            title('Photon transfer: slope = cgain [DN/e-], intercept = read noise^2');
         else
-            title(sprintf('Photon transfer: slope = egain [DN/e-], intercept = read noise^2  (settings < %g excluded: slope not significant)', p.min_setting));
+            title(sprintf('Photon transfer: slope = cgain [DN/e-], intercept = read noise^2  (settings < %g excluded: slope not significant)', p.min_setting));
         end
     end
 
@@ -34,28 +34,28 @@ function sensor_plot(analysis)
     [xs, xname] = setting_axis(p);
 
     subplot(321);
-    % x = ISO equivalent so the egain fit is a straight line; ticks relabelled with gain for astro cameras
-    [ax h1 h2] = plotyy(p.iso, p.egain, p.iso, p.read_noise);
+    % x = ISO equivalent so the cgain fit is a straight line; ticks relabelled with gain for astro cameras
+    [ax h1 h2] = plotyy(p.iso, p.cgain, p.iso, p.read_noise);
     set ([h1, h2], "linestyle", "-");
     set ([h1, h2], "marker", "+");
-    ylabel(ax(1), 'Egain [DN/e-]');
+    ylabel(ax(1), 'Conversion gain [DN/e-]');
     ylabel(ax(2), 'Read Noise [DN]');
     if p.has_iso
         xlabel('ISO');
-        title(sprintf("Egain vs ISO: f(x) = %g * x + %g", p.iso2egain(1), p.iso2egain(2)));
+        title(sprintf("Conversion gain vs ISO: f(x) = %g * x + %g", p.iso2cgain(1), p.iso2cgain(2)));
     else
         label_gain_ticks(ax, p);
         xlabel('Gain [0.1 dB]  (linear in 100*10^{gain/200})');
-        title(sprintf("Egain vs gain: f(g) = %g * 100*10^{g/200} + %g", p.iso2egain(1), p.iso2egain(2)));
+        title(sprintf("Conversion gain vs gain: f(g) = %g * 100*10^{g/200} + %g", p.iso2cgain(1), p.iso2cgain(2)));
     end
     grid on;
     hold on;
 
     subplot(322);
-    [ax h1 h2] = plotyy(p.iso, 1 ./ p.egain, p.iso, p.read_noise ./ p.egain);
+    [ax h1 h2] = plotyy(p.iso, 1 ./ p.cgain, p.iso, p.read_noise ./ p.cgain);
     set ([h1, h2], "linestyle", "-");
     set ([h1, h2], "marker", "+");
-    ylabel(ax(1), 'Egain [e-/DN]');
+    ylabel(ax(1), 'Gain 1/cgain [e-/DN]');
     ylabel(ax(2), 'Read Noise [e-]');
     if p.has_iso
         xlabel('ISO');
@@ -67,35 +67,35 @@ function sensor_plot(analysis)
     grid on;
 
     subplot(312);
-    [ax, h1, h2] = plotyy(p.egain, p.read_noise, p.egain, p.read_noise ./ p.egain);
-    xlabel('Egain [DN / e-]');
+    [ax, h1, h2] = plotyy(p.cgain, p.read_noise, p.cgain, p.read_noise ./ p.cgain);
+    xlabel('Conversion gain [DN/e-]');
     ylabel(ax(1), 'Read Noise [DN]');
     ylabel(ax(2), 'Read Noise [e-]');
     set ([h1, h2], "linestyle", "-");
     set ([h1, h2], "marker", "+");
-    title(sprintf('Read noise vs egain: f(x) = %gx + %g', p.egain2read_noise(1), p.egain2read_noise(2)));
+    title(sprintf('Read noise vs cgain: f(x) = %gx + %g', p.cgain2read_noise(1), p.cgain2read_noise(2)));
     grid on;
 
     subplot(325);
-    plot_iso(p.shutter, p.average ./ p.egain', p);
+    plot_iso(p.shutter, p.average ./ p.cgain', p);
     xlabel('Shutter [s]');
     ylabel('Dark signal [e-]');
     title(sprintf('Dark current: %.3g e-/s/pix', p.dark_current));
 
     subplot(326);
 
-    % Simulated single frame: signal and variance in DN for a given egain [DN/e-]
-    U = @(camera, egain, exposure, photons) ...
-          egain .* exposure .* photons;
+    % Simulated single frame: signal and variance in DN for a given cgain [DN/e-]
+    U = @(camera, cgain, exposure, photons) ...
+          cgain .* exposure .* photons;
 
-    V = @(camera, egain, exposure, photons) ...
-          egain .^ 2 .* exposure .* (photons + camera.dark_current) + ...
-          (camera.egain2read_noise(1) .* egain + camera.egain2read_noise(2)) .^ 2;
+    V = @(camera, cgain, exposure, photons) ...
+          cgain .^ 2 .* exposure .* (photons + camera.dark_current) + ...
+          (camera.cgain2read_noise(1) .* cgain + camera.cgain2read_noise(2)) .^ 2;
 
     exposures = [10 15];  # s
     photons   = 0.3;          # e-/s/pix, faint target / narrowband
 
-    x = p.egain(:);   # measured DN/e- per ISO/gain (linear iso2egain fit is poor when gain saturates)
+    x = p.cgain(:);   # measured DN/e- per ISO/gain (linear iso2cgain fit is poor when gain saturates)
 
     hold on;
     for e = exposures

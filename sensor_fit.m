@@ -63,14 +63,14 @@ function out = sensor_fit(data, min_setting = [])
     out.shutter2average = polyfit_cols(out.shutter, out.average, 1);
     out.average2sigma2  = polyfit_cols(out.average, out.sigma2, 1);
 
-    out.dark_rate = out.shutter2average(1, :)';   % DN/s, = dark_current * egain
+    out.dark_rate = out.shutter2average(1, :)';   % DN/s, = dark_current * cgain
 
-    % Photon transfer: slope = egain, intercept = read noise^2
-    out.egain       = out.average2sigma2(1, :)'; % DN / e-
+    % Photon transfer: slope = cgain, intercept = read noise^2
+    out.cgain       = out.average2sigma2(1, :)'; % DN / e-
     out.read_noise2 = out.average2sigma2(2, :)'; % DN^2
     out.read_noise  = sqrt(out.read_noise2);     % DN
 
-    out.egain2read_noise = polyfit_cols(out.egain, out.read_noise, 1);
+    out.cgain2read_noise = polyfit_cols(out.cgain, out.read_noise, 1);
 
     # Like DSLR - ISO
     as_linear = {};
@@ -81,8 +81,8 @@ function out = sensor_fit(data, min_setting = [])
     as_log.x = 10 .^ (ISO / 200) * 100;
 
     # select model on x normalised to [0,1]: DSLR ISO as gain gives 10^32, singular fit
-    [~, as_linear.s] = polyfit(as_linear.x / max(as_linear.x), out.egain, 1);
-    [~, as_log.s]    = polyfit(as_log.x / max(as_log.x), out.egain, 1);
+    [~, as_linear.s] = polyfit(as_linear.x / max(as_linear.x), out.cgain, 1);
+    [~, as_log.s]    = polyfit(as_log.x / max(as_log.x), out.cgain, 1);
 
     if as_linear.s.normr < as_log.s.normr
         out.iso = as_linear.x;
@@ -92,11 +92,11 @@ function out = sensor_fit(data, min_setting = [])
         out.has_iso = false;
     end
     out.setting = ISO;   % value as set on the camera (ISO or gain), for labels
-    out.iso2egain = polyfit(out.iso, out.egain, 1);
+    out.iso2cgain = polyfit(out.iso, out.cgain, 1);
 
-    out.egain2iso   = polyfit_cols(out.egain, out.iso', 1);
+    out.cgain2iso   = polyfit_cols(out.cgain, out.iso', 1);
 
-    out.dark_current = mean(out.dark_rate ./ out.egain); % e-/s/pix
+    out.dark_current = mean(out.dark_rate ./ out.cgain); % e-/s/pix
 end
 
 function out = polyfit_cols(x, y, n)

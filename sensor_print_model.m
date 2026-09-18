@@ -2,12 +2,12 @@ function sensor_print_model(p)
     % Prints the fit result as Octave code ready to paste into sensor_models.m
     printf("  camera = {};\n");
     printf("  camera.name = \"%s\";\n", p.name);
-    printf("  camera.egain2read_noise = @(egain) %g * egain + %g; # DN\n", p.egain2read_noise(1), p.egain2read_noise(2));
+    printf("  camera.cgain2read_noise = @(cgain) %g * cgain + %g; # DN\n", p.cgain2read_noise(1), p.cgain2read_noise(2));
     printf("  camera.dark_current = %g; # e-/s/pix\n", p.dark_current);
     printf("  camera.bias = %g; # DN\n", floor(median(p.bias)));
-    printf("  camera.egain = [ %s]; # DN/e-, settings >= %g\n", sprintf("%g ", p.egain'), p.min_setting);
+    printf("  camera.cgain = [ %s]; # DN/e-, settings >= %g\n", sprintf("%g ", p.cgain'), p.min_setting);
     printf("  camera.read_noise = [ %s]; # DN, per setting\n", sprintf("%g ", p.read_noise'));
     printf("  camera.has_iso = %d; # if false, log10(iso / 100) * 200 = gain [0.1dB]\n", p.has_iso)
     printf("  camera.iso = [ %s];\n", sprintf("%g ", p.iso));
-    printf("  camera.iso2egain = @(iso) %g * iso + %g; # DN/e-\n", p.iso2egain(1), p.iso2egain(2));
+    printf("  camera.iso2cgain = @(iso) %g * iso + %g; # DN/e-\n", p.iso2cgain(1), p.iso2cgain(2));
 end

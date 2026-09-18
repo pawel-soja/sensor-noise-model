@@ -1,33 +1,33 @@
 function sensor_plot_iso_limit(analysis, iso_limit)
-    % Egain and read noise vs ISO with the range above iso_limit highlighted,
+    % Conversion gain and read noise vs ISO with the range above iso_limit highlighted,
     % where the sensor's analog gain stops changing (higher ISO = digital scaling only).
     % Saves plots/<name>_iso_limit.png
     p = analysis;
     iso   = p.setting(:);   % ISO (DSLR) or gain [0.1 dB] (astro camera), as set on the camera
-    egain = p.egain(:);
+    cgain = p.cgain(:);
     rn_dn = p.read_noise(:);
-    rn_e  = rn_dn ./ egain;
+    rn_e  = rn_dn ./ cgain;
 
     sensor_figure(3, [p.name ' - analog gain limit']);
     xl = [min(iso) max(iso)] .* [0.9 1.1];
 
     subplot(211);
-    shade_above(iso_limit, iso, egain);
-    semilogx(iso, egain, '-+');
+    shade_above(iso_limit, iso, cgain);
+    semilogx(iso, cgain, '-+');
     set(gca, 'xlim', xl);
     xlabel('ISO');
-    ylabel('Egain [DN/e-]');
-    title(sprintf('%s: egain vs ISO', p.name), 'interpreter', 'none');
+    ylabel('Conversion gain [DN/e-]');
+    title(sprintf('%s: cgain vs ISO', p.name), 'interpreter', 'none');
     grid on;
     hold off;
 
-    % Annotation in the empty upper-left part of the egain plot
+    % Annotation in the empty upper-left part of the cgain plot
     idx = iso >= iso_limit;
-    msg = sprintf(['Above ISO %d egain (%.1f DN/e-) and read noise (%.1f DN = %.1f e-) stay flat:\n' ...
+    msg = sprintf(['Above ISO %d cgain (%.1f DN/e-) and read noise (%.1f DN = %.1f e-) stay flat:\n' ...
                    'analog gain stops here, higher ISO is digital scaling only.\n' ...
                    'No SNR benefit - only highlight headroom and bit depth are lost.'], ...
-                  iso_limit, mean(egain(idx)), mean(rn_dn(idx)), mean(rn_e(idx)));
-    text(xl(1) * 1.05, max(egain) * 1.10, msg, 'fontsize', 10, 'verticalalignment', 'top', ...
+                  iso_limit, mean(cgain(idx)), mean(rn_dn(idx)), mean(rn_e(idx)));
+    text(xl(1) * 1.05, max(cgain) * 1.10, msg, 'fontsize', 10, 'verticalalignment', 'top', ...
          'backgroundcolor', [1 1 0.85], 'edgecolor', [0.6 0.6 0.6]);
 
     subplot(212);
