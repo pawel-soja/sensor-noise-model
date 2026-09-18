@@ -67,7 +67,7 @@ sensor_models.m               paste the printed struct as a new `case`
 
 A dark frame pixel value $S$ [DN] at exposure time $t$ [s] is
 
-$$S = b + g\,(D\,t + n),$$
+$$S = b + g (D t + n),$$
 
 where $b$ – bias [DN], $g$ – cgain [DN/e-], $D$ – dark current [e-/s/pix], $n$ – noise [e-].
 `cgain` is the *conversion gain* in DN per electron – the inverse of the FITS `EGAIN` keyword /
@@ -78,8 +78,8 @@ The dark signal $D t$ is Poisson (variance = mean in e-), read noise $\sigma_r$ 
 
 For every (ISO, $t$) pair of frames $F_1$, $F_2$:
 
-$$\overline{S} = \operatorname{mean}(F_1), \qquad
-\sigma = \frac{\operatorname{std}(F_1 - F_2)}{\sqrt{2}}$$
+$$\overline{S} = \mathrm{mean}(F_1), \qquad
+\sigma = \frac{\mathrm{std}(F_1 - F_2)}{\sqrt{2}}$$
 
 Subtracting two frames removes the fixed pattern (hot pixels, bias structure); the difference has
 twice the temporal variance, hence $\sqrt 2$.
@@ -90,25 +90,25 @@ All fits are ordinary least squares (`polyfit(..., 1)`) over the exposure series
 
 1. **Mean vs exposure** – bias and dark rate:
 
-$$\overline{S}(t) = \underbrace{g D}_{\text{dark\_rate}}\; t + \underbrace{b}_{\text{bias}}$$
+$$\overline{S}(t) = \underbrace{g D}_{\text{dark rate}} \cdot t + \underbrace{b}_{\text{bias}}$$
 
 2. **Photon transfer** – variance vs bias-corrected mean. Since the dark signal in e- is Poisson,
-   $\operatorname{var}[\text{e-}] = D t$ and after scaling by $g$:
+   $\mathrm{var}[\text{e-}] = D t$ and after scaling by $g$:
 
-$$\sigma^2 = g^2 D t + \sigma_r^2 = \underbrace{g}_{\text{cgain}}\;(\overline{S} - b) + \underbrace{\sigma_r^2}_{\text{read\_noise}^2}$$
+$$\sigma^2 = g^2 D t + \sigma_r^2 = \underbrace{g}_{\text{cgain}} \cdot (\overline{S} - b) + \underbrace{\sigma_r^2}_{\text{read noise}^2}$$
 
    so the slope of $\sigma^2$ against $(\overline{S} - b)$ is cgain [DN/e-] and the intercept is
    read noise² [DN²]; $\sigma_r = \sqrt{\text{intercept}}$ [DN].
 
 3. **Dark current** – from the two slopes, averaged over all ISO (it does not depend on gain):
 
-$$D = \left\langle \frac{\text{dark\_rate}}{g} \right\rangle_{\text{ISO}} \quad [\text{e-/s/pix}]$$
+$$D = \left\langle \frac{\text{dark rate}}{g} \right\rangle_{\text{ISO}} \quad [\text{e-/s/pix}]$$
 
 4. **Slope significance** (automatic `min_setting`): for $n$ points of the photon-transfer fit with
    residuals $r_i$,
 
-$$t = \frac{g}{\operatorname{se}(g)}, \qquad
-\operatorname{se}(g) = \sqrt{\frac{\sum r_i^2 / (n-2)}{\sum (x_i - \bar x)^2}}, \quad x_i = \overline{S}_i - b$$
+$$t = \frac{g}{\mathrm{se}(g)}, \qquad
+\mathrm{se}(g) = \sqrt{\frac{\sum r_i^2 / (n-2)}{\sum (x_i - \bar x)^2}}, \quad x_i = \overline{S}_i - b$$
 
    Settings below the lowest ISO from which all higher ones have $t \ge 10$ are dropped.
 
@@ -117,7 +117,7 @@ $$t = \frac{g}{\operatorname{se}(g)}, \qquad
 - `iso2cgain`: $g(\text{ISO}) = a \cdot \text{ISO} + c$; for astro cameras the 0.1 dB gain setting $G$ is first
   converted to a linear scale $\text{ISO} = 100 \cdot 10^{G/200}$. Both models are tried on normalised $x$;
   the one with the lower residual norm wins (`has_iso` = linear).
-- `cgain2read_noise`: $\sigma_r(g) = a\,g + c$ [DN].
+- `cgain2read_noise`: $\sigma_r(g) = a g + c$ [DN].
 - `cgain2iso`: inverse of `iso2cgain`.
 
 ### Derived quantities
@@ -127,11 +127,11 @@ $$t = \frac{g}{\operatorname{se}(g)}, \qquad
 - `sensor_compare`: for sky flux $\Phi$ [e-/s/px] and sub length $t$,
 
 $$\text{var/s} = \Phi + D + \frac{\sigma_r[\text{e-}]^2}{t}, \qquad
-t_{\min} = \frac{10\,\sigma_r[\text{e-}]^2}{\Phi + D}$$
+t_{\min} = \frac{10 \sigma_r[\text{e-}]^2}{\Phi + D}$$
 
   Relative integration time for equal SNR is the ratio of var/s between cameras.
-- `sensor_simulate` (inverse): $\overline{S} = g\,\overline{P} + b$,
-  $\sigma = \sqrt{g^2 \operatorname{var}(P) + \sigma_r(g)^2}$ with $P \sim \text{Poisson}(D t)$.
+- `sensor_simulate` (inverse): $\overline{S} = g \overline{P} + b$,
+  $\sigma = \sqrt{g^2 \mathrm{var}(P) + \sigma_r(g)^2}$ with $P \sim \text{Poisson}(D t)$.
 
 ## Scripts
 

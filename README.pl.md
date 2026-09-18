@@ -67,7 +67,7 @@ sensor_models.m               wklej wydrukowaną strukturę jako nowy `case`
 
 Wartość piksela klatki dark $S$ [DN] przy czasie ekspozycji $t$ [s]:
 
-$$S = b + g\,(D\,t + n),$$
+$$S = b + g (D t + n),$$
 
 gdzie $b$ – bias [DN], $g$ – cgain [DN/e-], $D$ – prąd ciemny [e-/s/pix], $n$ – szum [e-].
 `cgain` to *conversion gain* w DN na elektron – odwrotność słowa kluczowego FITS `EGAIN` /
@@ -78,8 +78,8 @@ Sygnał darka $D t$ ma rozkład Poissona (wariancja = średnia w e-), read noise
 
 Dla każdej pary klatek $F_1$, $F_2$ o tym samym (ISO, $t$):
 
-$$\overline{S} = \operatorname{mean}(F_1), \qquad
-\sigma = \frac{\operatorname{std}(F_1 - F_2)}{\sqrt{2}}$$
+$$\overline{S} = \mathrm{mean}(F_1), \qquad
+\sigma = \frac{\mathrm{std}(F_1 - F_2)}{\sqrt{2}}$$
 
 Odjęcie dwóch klatek usuwa fixed pattern (gorące piksele, struktura biasu); różnica ma dwa razy
 większą wariancję czasową, stąd $\sqrt 2$.
@@ -91,25 +91,25 @@ jednego ISO.
 
 1. **Średnia vs czas** – bias i dark rate:
 
-$$\overline{S}(t) = \underbrace{g D}_{\text{dark\_rate}}\; t + \underbrace{b}_{\text{bias}}$$
+$$\overline{S}(t) = \underbrace{g D}_{\text{dark rate}} \cdot t + \underbrace{b}_{\text{bias}}$$
 
 2. **Photon transfer** – wariancja vs średnia po odjęciu biasu. Sygnał darka w e- jest Poissonowski,
-   więc $\operatorname{var}[\text{e-}] = D t$, a po przeskalowaniu przez $g$:
+   więc $\mathrm{var}[\text{e-}] = D t$, a po przeskalowaniu przez $g$:
 
-$$\sigma^2 = g^2 D t + \sigma_r^2 = \underbrace{g}_{\text{cgain}}\;(\overline{S} - b) + \underbrace{\sigma_r^2}_{\text{read\_noise}^2}$$
+$$\sigma^2 = g^2 D t + \sigma_r^2 = \underbrace{g}_{\text{cgain}} \cdot (\overline{S} - b) + \underbrace{\sigma_r^2}_{\text{read noise}^2}$$
 
    czyli nachylenie $\sigma^2$ względem $(\overline{S} - b)$ to cgain [DN/e-], a przecięcie to
    read noise² [DN²]; $\sigma_r = \sqrt{\text{przecięcie}}$ [DN].
 
 3. **Prąd ciemny** – z obu nachyleń, uśredniony po wszystkich ISO (nie zależy od wzmocnienia):
 
-$$D = \left\langle \frac{\text{dark\_rate}}{g} \right\rangle_{\text{ISO}} \quad [\text{e-/s/pix}]$$
+$$D = \left\langle \frac{\text{dark rate}}{g} \right\rangle_{\text{ISO}} \quad [\text{e-/s/pix}]$$
 
 4. **Istotność nachylenia** (automatyczne `min_setting`): dla $n$ punktów dopasowania photon transfer
    z resztami $r_i$,
 
-$$t = \frac{g}{\operatorname{se}(g)}, \qquad
-\operatorname{se}(g) = \sqrt{\frac{\sum r_i^2 / (n-2)}{\sum (x_i - \bar x)^2}}, \quad x_i = \overline{S}_i - b$$
+$$t = \frac{g}{\mathrm{se}(g)}, \qquad
+\mathrm{se}(g) = \sqrt{\frac{\sum r_i^2 / (n-2)}{\sum (x_i - \bar x)^2}}, \quad x_i = \overline{S}_i - b$$
 
    Ustawienia poniżej najniższego ISO, od którego wszystkie wyższe mają $t \ge 10$, są odrzucane.
 
@@ -118,7 +118,7 @@ $$t = \frac{g}{\operatorname{se}(g)}, \qquad
 - `iso2cgain`: $g(\text{ISO}) = a \cdot \text{ISO} + c$; dla kamer astro gain $G$ w 0.1 dB jest najpierw
   przeliczany na skalę liniową $\text{ISO} = 100 \cdot 10^{G/200}$. Oba modele są próbowane na
   znormalizowanym $x$; wygrywa ten z mniejszą normą reszt (`has_iso` = liniowy).
-- `cgain2read_noise`: $\sigma_r(g) = a\,g + c$ [DN].
+- `cgain2read_noise`: $\sigma_r(g) = a g + c$ [DN].
 - `cgain2iso`: odwrotność `iso2cgain`.
 
 ### Wielkości pochodne
@@ -128,11 +128,11 @@ $$t = \frac{g}{\operatorname{se}(g)}, \qquad
 - `sensor_compare`: dla strumienia nieba $\Phi$ [e-/s/px] i długości klatki $t$,
 
 $$\text{var/s} = \Phi + D + \frac{\sigma_r[\text{e-}]^2}{t}, \qquad
-t_{\min} = \frac{10\,\sigma_r[\text{e-}]^2}{\Phi + D}$$
+t_{\min} = \frac{10 \sigma_r[\text{e-}]^2}{\Phi + D}$$
 
   Względny czas integracji do tego samego SNR to stosunek var/s między kamerami.
-- `sensor_simulate` (odwrotność): $\overline{S} = g\,\overline{P} + b$,
-  $\sigma = \sqrt{g^2 \operatorname{var}(P) + \sigma_r(g)^2}$, gdzie $P \sim \text{Poisson}(D t)$.
+- `sensor_simulate` (odwrotność): $\overline{S} = g \overline{P} + b$,
+  $\sigma = \sqrt{g^2 \mathrm{var}(P) + \sigma_r(g)^2}$, gdzie $P \sim \text{Poisson}(D t)$.
 
 ## Skrypty
 
