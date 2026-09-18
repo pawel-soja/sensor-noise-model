@@ -111,8 +111,19 @@ end
 
 % slope / standard error of the sigma^2(average) fit for one setting's rows
 function t = slope_tstat(rows)
-    x = rows(:, 3) - polyfit(rows(:, 2), rows(:, 3), 1)(2);   % average - bias
-    y = rows(:, 4) .^ 2;
+    IDX_ISO     = 1;
+    IDX_SHUTTER = 2;
+    IDX_AVERAGE = 3;
+    IDX_SIGMA   = 4;
+
+    average = rows(:, IDX_AVERAGE);
+    shutter = rows(:, IDX_SHUTTER);
+    sigma   = rows(:, IDX_SIGMA);
+
+    bias = polyfit(shutter, average, 1)(2);
+
+    x = average - bias;
+    y = sigma .^ 2;
     n = numel(x);
     if n < 3
         t = 0;
