@@ -154,13 +154,18 @@ Detects the single connected camera (`gphoto2 --auto-detect`), switches to RAW a
 Existing files are skipped, so a run can be resumed or extended.
 
 ### gphoto2_take_flats.sh
-Same for flats (`frames/<camera>/flat/raw/flat_iso<ISO>_<time>_<n>.nef`) with an evenly lit panel in
-front of the lens. The exposure series should span a few % to ~70 % of full scale at every ISO
-without clipping – check the longest time of each group with a test frame first and adjust panel
-brightness or aperture. Capture only for now; the analysis pipeline uses darks.
+Same for flats (`frames/<camera>/flat/raw/flat_iso<ISO>_ev<EV>_<n>.nef`) with an evenly lit panel in
+front of the lens. Photon transfer needs several signal levels per ISO, so instead of tuning shutter
+times the camera is put in **A mode with auto ISO off** and the script steps exposure compensation
+(`EVS`, default −4 … +2 EV ≈ 1 … 70 % of full scale) – the camera meters the panel to mid grey and adapts
+the shutter to each ISO by itself. The real shutter time lands in EXIF → `EXPTIME`, which
+`frames2stats.py` groups by; both frames of a pair must meter identically (keep the light constant).
+Capture only for now; the analysis pipeline uses darks.
 
 Both scripts are thin config wrappers around `gphoto2_capture.sh` (camera detection, plan of missing
-frames, confirmation with time estimate, capture loop).
+frames, confirmation with time estimate, capture loop). `EXPOSURE_KEY` selects the gphoto2 setting
+varied within an ISO series: `capturesettings/shutterspeed` (default, darks) or
+`capturesettings/exposurecompensation` (flats).
 
 ### raw2fits.sh <camera> <dark|flat>
 Finds every directory with RAW files under `frames/<camera>/<type>/raw/` and converts them with Siril

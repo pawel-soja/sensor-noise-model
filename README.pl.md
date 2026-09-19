@@ -155,13 +155,18 @@ Wartości `TIMES` w formacie zgłaszanym przez `gphoto2 --get-config capturesett
 Istniejące pliki są pomijane, więc serię można wznowić lub rozszerzyć.
 
 ### gphoto2_take_flats.sh
-To samo dla flatów (`frames/<kamera>/flat/raw/flat_iso<ISO>_<czas>_<n>.nef`) z równomiernie
-oświetlonym panelem przed obiektywem. Seria czasów powinna pokrywać od kilku % do ~70 % pełnej skali
-przy każdym ISO bez przepaleń – najpierw sprawdź najdłuższy czas z każdej grupy klatką testową i dobierz
-jasność panelu albo przysłonę. Na razie tylko zbieranie; potok analizy używa darków.
+To samo dla flatów (`frames/<kamera>/flat/raw/flat_iso<ISO>_ev<EV>_<n>.nef`) z równomiernie
+oświetlonym panelem przed obiektywem. Photon transfer potrzebuje kilku poziomów sygnału na każde ISO,
+więc zamiast dobierać czasy aparat ustawia się w **tryb A z wyłączonym auto ISO**, a skrypt przechodzi
+po korekcji ekspozycji (`EVS`, domyślnie −4 … +2 EV ≈ 1 … 70 % pełnej skali) – aparat mierzy panel do
+średniej szarości i sam dopasowuje czas do każdego ISO. Rzeczywisty czas trafia do EXIF → `EXPTIME`,
+po którym grupuje `frames2stats.py`; obie klatki pary muszą zmierzyć identycznie (stałe światło).
+Na razie tylko zbieranie; potok analizy używa darków.
 
 Oba skrypty to cienkie nakładki konfiguracyjne na `gphoto2_capture.sh` (wykrycie kamery, plan
-brakujących klatek, potwierdzenie z szacowanym czasem, pętla zdjęć).
+brakujących klatek, potwierdzenie z szacowanym czasem, pętla zdjęć). `EXPOSURE_KEY` wybiera ustawienie
+gphoto2 zmieniane w serii jednego ISO: `capturesettings/shutterspeed` (domyślnie, darki) albo
+`capturesettings/exposurecompensation` (flaty).
 
 ### raw2fits.sh <kamera> <dark|flat>
 Znajduje wszystkie katalogi z RAW pod `frames/<kamera>/<typ>/raw/` i konwertuje je Sirilem (bez debayeru,
