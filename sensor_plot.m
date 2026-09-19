@@ -1,44 +1,28 @@
 function sensor_plot(analysis)
     p = analysis;
+    has_flat = isfield(p, 'flat');
 
-    # Debug - Input data
-    if true
-        sensor_figure(1, [p.name ' - Debug - Input data']);
-        colormap(iso_colormap());
-
-        subplot(221);
-        plot_iso(p.shutter, p.average, p, p.shutter2average);
-        xlabel('Shutter [s]');
-        ylabel('Average - Bias [DN]');
-        title('Dark signal vs exposure (linear fit)');
-
-        subplot(222);
-        plot_iso(p.shutter, p.sigma, p);
-        xlabel('Shutter [s]');
-        ylabel('Sigma [DN]');
-        title('Noise vs exposure');
-
-        subplot(212);
-        plot_iso(p.average, p.sigma2, p, p.average2sigma2);
-        xlabel('Average - Bias [DN]');
-        ylabel('Sigma^2 [DN^2]');
-        if isempty(p.excluded)
-            title('Photon transfer: slope = cgain [DN/e-], intercept = read noise^2');
-        else
-            title(sprintf('Photon transfer: slope = cgain [DN/e-], intercept = read noise^2  (settings < %g excluded: slope not significant)', p.min_setting));
-        end
+    plot_input(1, p, 'Dark');
+    if has_flat
+        p.flat.name = p.name;
+        plot_input(3, p.flat, 'Flat');
     end
 
     sensor_figure(2, [p.name ' - Sensor model']);
     colormap(iso_colormap());
     [xs, xname] = setting_axis(p);
+    if has_flat
+        src = ' (from flats)';
+    else
+        src = '';
+    end
 
     subplot(321);
     % x = ISO equivalent so the cgain fit is a straight line; ticks relabelled with gain for astro cameras
     [ax h1 h2] = plotyy(p.iso, p.cgain, p.iso, p.read_noise);
     set ([h1, h2], "linestyle", "-");
     set ([h1, h2], "marker", "+");
-    ylabel(ax(1), 'Conversion gain [DN/e-]');
+    ylabel(ax(1), ['Conversion gain [DN/e-]' src]);
     ylabel(ax(2), 'Read Noise [DN]');
     if p.has_iso
         xlabel('ISO');
@@ -77,10 +61,17 @@ function sensor_plot(analysis)
     grid on;
 
     subplot(325);
-    plot_iso(p.shutter, p.average ./ p.cgain', p);
+    if has_flat
+        % dark_current comes from the variance growth, so show that estimate (clamp-proof)
+        plot_iso(p.shutter, (p.sigma2 - p.read_noise2') ./ p.cgain' .^ 2, p);
+        ylabel('(Sigma^2 - RN^2) / cgain^2 [e-]');
+        title(sprintf('Dark current from variance growth: %.3g e-/s/pix', p.dark_current));
+    else
+        plot_iso(p.shutter, p.average ./ p.cgain', p);
+        ylabel('Dark signal [e-]');
+        title(sprintf('Dark current: %.3g e-/s/pix', p.dark_current));
+    end
     xlabel('Shutter [s]');
-    ylabel('Dark signal [e-]');
-    title(sprintf('Dark current: %.3g e-/s/pix', p.dark_current));
 
     subplot(326);
 
@@ -111,6 +102,46 @@ function sensor_plot(analysis)
 
     sensor_save_png(1, [p.name '_input']);
     sensor_save_png(2, [p.name '_model']);
+    if has_flat
+        sensor_save_png(3, [p.name '_flat_input']);
+    end
+end
+
+# Input data with fits: signal and noise vs exposure, photon transfer. kind = 'Dark' | 'Flat'
+# Flats span decades in signal (EV steps) and cgain, so they get log-log axes.
+function plot_input(fig, p, kind)
+    sensor_figure(fig, sprintf('%s - %s input data', p.name, kind));
+    colormap(iso_colormap());
+    if strcmp(kind, 'Flat')
+        scale = 'log';
+    else
+        scale = 'linear';
+    end
+
+    subplot(221);
+    plot_iso(p.shutter, p.average, p, p.shutter2average);
+    set(gca, 'xscale', scale, 'yscale', scale);
+    xlabel('Shutter [s]');
+    ylabel('Average - Bias [DN]');
+    title(sprintf('%s signal vs exposure (linear fit)', kind));
+
+    subplot(222);
+    plot_iso(p.shutter, p.sigma, p);
+    set(gca, 'xscale', scale, 'yscale', scale);
+    xlabel('Shutter [s]');
+    ylabel('Sigma [DN]');
+    title('Noise vs exposure');
+
+    subplot(212);
+    plot_iso(p.average, p.sigma2, p, p.average2sigma2);
+    set(gca, 'xscale', scale, 'yscale', scale);
+    xlabel('Average - Bias [DN]');
+    ylabel('Sigma^2 [DN^2]');
+    if isempty(p.excluded)
+        title('Photon transfer: slope = cgain [DN/e-], intercept = read noise^2');
+    else
+        title(sprintf('Photon transfer: slope = cgain [DN/e-], intercept = read noise^2  (settings < %g excluded: slope not significant)', p.min_setting));
+    end
 end
 
 function cmap = iso_colormap()

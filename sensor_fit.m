@@ -1,10 +1,14 @@
-function out = sensor_fit(data, min_setting = [])
-    % data:        [ISO shutter average sigma] rows from stats/<camera>.csv
+function out = sensor_fit(data, min_setting = [], bias = [])
+    % data:        [ISO shutter average sigma] rows from stats/<camera>_<type>.csv
     % min_setting: lowest ISO/gain to analyse. Default: chosen automatically - the lowest
     %              setting from which the photon-transfer slope is significant for every
     %              higher setting (slope / its standard error >= T_MIN). Low settings have too
     %              little dark signal for a usable slope and are not used in astrophotography
     %              anyway. Pass a value to override, 0 to keep everything.
+    % bias:        optional [setting bias] table (e.g. from the dark fit) used instead of the
+    %              average(shutter) intercept. For flats the intercept is unreliable: the
+    %              fastest mechanical shutter speeds expose longer than nominal, and with the
+    %              source at ~30 % of full scale a 1 % time error shifts the intercept by tens of DN.
     T_MIN = 10;   % slope significance threshold, ~ correlation > 0.95 on 5+ points
 
     IDX_ISO     = 1;
@@ -57,13 +61,23 @@ function out = sensor_fit(data, min_setting = [])
     pf = polyfit_cols(out.shutter, out.average, 1);
 
     out.bias = (pf(2, :));       % DN
+    if ~isempty(bias)
+        for n = 1:COLS
+            k = find(bias(:, 1) == ISO(n), 1);
+            if ~isempty(k)
+                out.bias(n) = bias(k, 2);
+            end
+        end
+    end
     out.average -= out.bias;     % DN
     out.sigma2 = out.sigma .^ 2; % DN^2
 
     out.shutter2average = polyfit_cols(out.shutter, out.average, 1);
     out.average2sigma2  = polyfit_cols(out.average, out.sigma2, 1);
+    out.shutter2sigma2  = polyfit_cols(out.shutter, out.sigma2, 1);
 
-    out.dark_rate = out.shutter2average(1, :)';   % DN/s, = dark_current * cgain
+    out.dark_rate   = out.shutter2average(1, :)';   % DN/s,   = dark_current * cgain
+    out.sigma2_rate = out.shutter2sigma2(1, :)';    % DN^2/s, = dark_current * cgain^2 (immune to a black-level clamp)
 
     % Photon transfer: slope = cgain, intercept = read noise^2
     out.cgain       = out.average2sigma2(1, :)'; % DN / e-
@@ -96,7 +110,8 @@ function out = sensor_fit(data, min_setting = [])
 
     out.cgain2iso   = polyfit_cols(out.cgain, out.iso', 1);
 
-    out.dark_current = mean(out.dark_rate ./ out.cgain); % e-/s/pix
+    out.dark_current = mean(out.dark_rate ./ out.cgain); % e-/s/pix (for flats: source flux)
+    out.source = 'dark';   % where cgain comes from; sensor_merge sets 'flat'
 end
 
 function out = polyfit_cols(x, y, n)

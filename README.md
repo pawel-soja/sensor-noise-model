@@ -18,27 +18,27 @@ plots/<camera>_*.png           plots saved automatically by sensor_plot
 ```
 
 `<camera>` is the key throughout the pipeline: frames directory, CSV file,
-`analysis.name` and the `case` in `sensor_models.m`. The noise model below is derived from
-`dark`; `flat` frames are only captured for now (photon transfer with real light, e.g. for cameras
-with a black-level clamp like the Z6 II).
+`analysis.name` and the `case` in `sensor_models.m`. `dark` is required; `flat` is optional and,
+when present, takes over the conversion gain (see [Darks + flats](#darks--flats-sensor_merge)).
 
 ## Pipeline
 
 ```
-frames/<camera>/dark/raw/**/*.nef  (DSLR)
-  │  ./gphoto2_take_darks.sh          capture over USB (optional)
-  │  ./raw2fits.sh <camera> dark       RAW → FITS (Siril)
-  ▼
-frames/<camera>/dark/**/*.fit[s]   (frame pairs for every ISO × exposure)
-  │  ./frames2stats.py <camera> dark
-  ▼
-stats/<camera>_dark.csv            ISO; shutter [s]; average [DN]; sigma [DN]
+frames/<camera>/dark/raw/**/*.nef            frames/<camera>/flat/raw/**/*.nef   (DSLR)
+  │  ./gphoto2_take_darks.sh                    │  ./gphoto2_take_flats.sh        capture over USB (optional)
+  │  ./raw2fits.sh <camera> dark                │  ./raw2fits.sh <camera> flat    RAW → FITS (Siril)
+  ▼                                             ▼
+frames/<camera>/dark/**/*.fit[s]             frames/<camera>/flat/**/*.fit[s]    (frame pairs, ISO × exposure)
+  │  ./frames2stats.py <camera> dark            │  ./frames2stats.py <camera> flat
+  ▼                                             ▼
+stats/<camera>_dark.csv                      stats/<camera>_flat.csv  (optional)   ISO; shutter; average; sigma
   │  sensor_characterize('<camera>')
-  │    ├─ sensor_fit          linear fits → analysis struct
-  │    ├─ sensor_plot         plots (fig 1: input data, fig 2: model) → plots/<camera>_{input,model}.png
+  │    ├─ sensor_fit          linear fits of darks (and flats)
+  │    ├─ sensor_merge        with flats: cgain from flats, RN + dark current from darks
+  │    ├─ sensor_plot         plots → plots/<camera>_{input,model,flat_input}.png
   │    └─ sensor_print_model  prints ready-to-paste `camera` struct
   ▼
-sensor_models.m                    paste the printed struct as a new `case`
+sensor_models.m                              paste the printed struct as a new `case`
 ```
 
 ## Step by step – new camera
@@ -60,11 +60,14 @@ sensor_models.m                    paste the printed struct as a new `case`
    Gain is read from the `ISOSPEED` (DSLR) or `GAIN` (astro camera) header keyword.
    By default the whole frame is used with no pixel selection; `--win`/`--clip` are only for
    problematic data (see script description).
-4. In Octave:
+4. Optional – flats (recommended for DSLRs, required for cameras with a black-level clamp such as
+   the Z6 II): `./gphoto2_take_flats.sh`, then the same `raw2fits.sh` / `frames2stats.py` with `flat`.
+   If `stats/<camera>_flat.csv` exists, `sensor_characterize` uses it automatically.
+5. In Octave:
    ```octave
    sensor_characterize('<camera>')
    ```
-5. Copy the console output into `sensor_models.m` as a new `case`.
+6. Copy the console output into `sensor_models.m` as a new `case`.
 
 ## Noise model and formulas
 
@@ -81,11 +84,14 @@ The dark signal $D t$ is Poisson (variance = mean in e-), read noise $\sigma_r$ 
 
 For every (ISO, $t$) pair of frames $F_1$, $F_2$:
 
-$$\overline{S} = \mathrm{mean}(F_1), \qquad
-\sigma = \frac{\mathrm{std}(F_1 - F_2)}{\sqrt{2}}$$
+$$\overline{S} = \frac{\mathrm{mean}(F_1) + \mathrm{mean}(F_2)}{2}, \qquad
+\sigma = \frac{\mathrm{std}(F_1 - k F_2)}{\sqrt{2}}, \quad k = \frac{\mathrm{mean}(F_1)}{\mathrm{mean}(F_2)}$$
 
-Subtracting two frames removes the fixed pattern (hot pixels, bias structure); the difference has
-twice the temporal variance, hence $\sqrt 2$.
+Subtracting two frames removes the fixed pattern (hot pixels, bias structure, PRNU, vignetting);
+the difference has twice the temporal variance, hence $\sqrt 2$. The scale factor $k$ absorbs a
+brightness drift of the light source between the two flats (Z6 II panel: up to 3 %), which with
+vignetting would otherwise leave a pattern in the difference and inflate $\sigma$ (ISO 100 / +2 EV:
+44 → 29 DN). For darks $k \approx 1$.
 
 ### Fits per ISO/gain (`sensor_fit`)
 
@@ -114,6 +120,28 @@ $$t = \frac{g}{\mathrm{se}(g)}, \qquad
 \mathrm{se}(g) = \sqrt{\frac{\sum r_i^2 / (n-2)}{\sum (x_i - \bar x)^2}}, \quad x_i = \overline{S}_i - b$$
 
    Settings below the lowest ISO from which all higher ones have $t \ge 10$ are dropped.
+
+### Darks + flats (`sensor_merge`)
+
+A flat is the same photon-transfer experiment with light instead of dark current: $S = b + g(\Phi t + n)$
+with the source flux $\Phi$ [e-/s] constant and $t$ stepped (in A mode via exposure compensation). The
+same `sensor_fit` applies, but the signal is 100× larger, so the slope $g$ is far better determined and
+independent of how the camera treats the dark mean. When `stats/<camera>_flat.csv` exists the model is
+assembled from both:
+
+| quantity | source | why |
+|---|---|---|
+| $b$ bias | darks, `average(t)` intercept | the flat intercept is spoiled by shutter timing error at the fastest speeds (1/8000 exposes longer than nominal) |
+| $g$ cgain | flats, photon-transfer slope with the dark $b$ | large signal; immune to a black-level clamp |
+| $\sigma_r$ read noise | darks, photon-transfer intercept | in flats $\sigma_r^2 \ll g(\overline S - b)$, the intercept is poorly determined |
+| $D$ dark current | darks, **variance** growth | the dark mean may be clamped, the variance is not |
+
+$$\sigma^2_{\text{dark}}(t) = g^2 D\, t + \sigma_r^2 \quad\Rightarrow\quad
+D = \left\langle \frac{d\sigma^2/dt}{g^2} \right\rangle_{\text{ISO}}$$
+
+with $g$ per ISO from the flats (settings without a flat are interpolated in log-log, $g \propto$ ISO).
+The automatic `min_setting` exclusion is off in this mode – the dark photon-transfer slope is no
+longer used. Dark-only cameras keep the formulas above.
 
 ### Fits across ISO/gain
 
@@ -160,7 +188,6 @@ times the camera is put in **A mode with auto ISO off** and the script steps exp
 (`EVS`, default −4 … +2 EV ≈ 1 … 70 % of full scale) – the camera meters the panel to mid grey and adapts
 the shutter to each ISO by itself. The real shutter time lands in EXIF → `EXPTIME`, which
 `frames2stats.py` groups by; both frames of a pair must meter identically (keep the light constant).
-Capture only for now; the analysis pipeline uses darks.
 
 Both scripts are thin config wrappers around `gphoto2_capture.sh` (camera detection, plan of missing
 frames, confirmation with time estimate, capture loop). `EXPOSURE_KEY` selects the gphoto2 setting
@@ -180,7 +207,8 @@ with the screen); without `DISPLAY` it falls back to gnuplot (fonts less faithfu
 
 ### frames2stats.py [--win N] [--clip S] <camera> <dark|flat>
 Groups FITS files from `frames/<camera>/<type>/` by (ISO, EXPTIME), takes the first two frames of each group and computes
-`average` = mean, `sigma` = std(frame1 − frame2)/√2 over the whole frame.
+`average` = mean of both, `sigma` = std(frame1 − k·frame2)/√2 over the whole frame, where k equalises the
+means (brightness drift of the panel between two flats; for darks k ≈ 1).
 Writes `stats/<camera>_<type>.csv` (`;`-separated).
 
 By default no pixels are rejected – camera noise has heavy tails (RTS pixels etc.) and that is
@@ -194,13 +222,16 @@ Parameters used: `Nikon_D5100` – `--win 4096 --clip 8`; `Nikon_Z6_2`, `ASI2600
 
 ### analysis = sensor_characterize(name, min_setting = [])
 Main entry point. Loads `stats/<name>_dark.csv` → `sensor_fit` → `sensor_plot` → `sensor_print_model`.
+If `stats/<name>_flat.csv` exists it is fitted too (with the dark bias) and combined by `sensor_merge`;
+`min_setting` then defaults to 0 (no exclusion – the dark photon-transfer slope is not used).
 Returns the `analysis` struct (e.g. for `sensor_plot_iso_limit`).
 
-### analysis = sensor_fit(data, min_setting = [])
+### analysis = sensor_fit(data, min_setting = [], bias = [])
 From the `[ISO shutter average sigma]` matrix computes, for every ISO (formulas in
 [Noise model and formulas](#noise-model-and-formulas)):
-- `bias` – intercept of the average(shutter) line
-- `dark_rate` [DN/s] – slope of the average(shutter) line
+- `bias` – intercept of the average(shutter) line, or taken from the optional `[setting bias]` table
+- `dark_rate` [DN/s] – slope of the average(shutter) line (for flats: source flux × cgain)
+- `sigma2_rate` [DN²/s] – slope of the sigma²(shutter) line (= dark current × cgain²)
 - `cgain` [DN/e-] – slope of the sigma²(average − bias) line (photon transfer)
 - `read_noise` [DN] – √ of that line's intercept
 - `dark_current` [e-/s/pix] – `dark_rate / cgain`
@@ -217,12 +248,19 @@ computes the slope significance (slope / its standard error) for every setting a
 below the lowest setting from which all higher ones have t ≥ 10. Dropped settings are reported
 (`analysis.excluded`, `analysis.min_setting`) and appear neither in the plots nor in the model.
 Low ISO/gain is not used in astrophotography anyway. `min_setting` forces the threshold (0 = keep all).
-Result: D5100 – everything from ISO 100; ASI2600 – from gain 150; Z6 II – from ISO 1600.
+Result: D5100 – everything from ISO 100; ASI2600 – from gain 150; Z6 II – from ISO 1600 (darks only).
+
+### analysis = sensor_merge(dark, flat)
+Combines two `sensor_fit` results on the dark's ISO grid: `cgain` from the flat (interpolated in
+log-log for settings without a flat), `read_noise` and `bias` from the dark, `dark_current` from the
+dark variance growth `sigma2_rate / cgain²` (per setting in `dark_current_per_setting`). The flat fit
+is attached as `analysis.flat`, `analysis.source = 'flat'`. See [Darks + flats](#darks--flats-sensor_merge).
 
 ### sensor_plot(analysis)
-Fig 1 – input data with fits. Fig 2 – cgain, read noise vs ISO, SNR vs ISO.
-Lines coloured by log(ISO) (blue = lowest, red = highest) with a colorbar instead of a legend.
-Both figures are saved to `plots/<name>_input.png` and `plots/<name>_model.png`.
+Fig 1 – dark input data with fits. Fig 2 – cgain, read noise vs ISO, dark current, SNR vs ISO.
+With flats also Fig 3 – flat input data (log-log), and the dark-current panel shows the variance-based
+estimate. Lines coloured by log(ISO) (blue = lowest, red = highest) with a colorbar instead of a legend.
+Saved to `plots/<name>_input.png`, `plots/<name>_model.png` and `plots/<name>_flat_input.png`.
 
 ### sensor_plot_iso_limit(analysis, iso_limit)
 Conversion gain and read noise vs ISO (log axis) with the range above `iso_limit` highlighted, where analog
@@ -235,7 +273,7 @@ sensor_plot_iso_limit(sensor_characterize('Nikon_D5100'), 1600)
 Prints the `camera` struct as code to paste into `sensor_models.m`.
 
 ### camera = sensor_models(name)
-Database of fitted models (`"ASI2600MM_5deg"`, `"Nikon_D5100"`). Besides the linear
+Database of fitted models (`"ASI2600MM_5deg"`, `"Nikon_D5100"`, `"Nikon_Z6_2"`). Besides the linear
 fits it holds the measured `cgain` and `read_noise` [DN] for every setting.
 
 ### data = sensor_simulate(camera, shutter)
@@ -257,10 +295,10 @@ sensor_compare({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, 0.3, 60)
 ```
 camera            setting   cgain  RN [e-]  D [e-/s]  t_min   var/s   time
 ASI2600MM_5deg        250   43.54    0.62    0.0017   12.7   0.308  1.00x
-Nikon_D5100          1600    5.90    2.04    0.4012   59.4   0.771  2.50x
+Nikon_D5100          1600    5.30    2.27    0.4444   69.4   0.830  2.70x
 ```
-Under a dark sky (0.3 e-/s) the D5100 needs ~2.5× the time of the ASI2600 – almost entirely due to
-dark current; under a bright sky (5 e-/s) the difference drops to ~9 %.
+Under a dark sky (0.3 e-/s) the D5100 needs ~2.7× the time of the ASI2600 – almost entirely due to
+dark current; under a bright sky (5 e-/s) the difference drops to ~10 %.
 
 ### sensor_plot_sub_length(cameras, skies = [0.03 0.3], t = logspace(0, log10(60), 61), penalty = 0.1)
 Total integration time for equal SNR vs sub length, relative to an ideal noiseless camera (see
@@ -269,7 +307,7 @@ limit) and read noise (curve rising above it for short subs). One panel per sky 
 line per camera (`cameras` as in `sensor_compare`), circles mark `t_min` – the sub length where read
 noise costs `penalty` more time than the dashed limit. Log Y axis. Saved to `plots/sub_length.png`.
 ```octave
-sensor_plot_sub_length({'ASI2600MM_5deg', {'Nikon_D5100', 1600}}, [0.03 0.3])
+sensor_plot_sub_length({'ASI2600MM_5deg', {'Nikon_D5100', 1600}, {'Nikon_Z6_2', 800}}, [0.03 0.3])
 ```
 
 ## Outside the pipeline
@@ -284,17 +322,34 @@ Estimating stellar magnitude from ADU counts – notes from a Deneb measurement.
 
 ### Nikon D5100 – ISO above 1600 is digital only
 
-From ISO 1600 upwards cgain (5.9 DN/e-) and read noise (12.1 DN = 2.1 e-) stop changing:
-analog gain ends at 1600, higher ISO is purely digital scaling.
-SNR does not improve, only highlight headroom and bit depth are lost – for astrophotography
-there is no point going above ISO 1600.
+From ISO 1600 upwards cgain (5.3 DN/e-) and read noise (12.1 DN = 2.3 e-) stop changing:
+analog gain ends at 1600, higher ISO is purely digital scaling (flats confirm it through Hi1/Hi2 =
+ISO 12800/25600: cgain 5.47 / 5.55). SNR does not improve, only highlight headroom and bit depth are
+lost – for astrophotography there is no point going above ISO 1600.
 
 ![D5100 – analog gain limit](plots/Nikon_D5100_iso_limit.png)
+
+**Flats vs darks.** The D5100 has no black-level clamp, so its dark photon transfer is usable, but the
+flats still correct cgain by −10 % at ISO ≥ 800 (5.90 → 5.30 DN/e- at 1600; 200–400 agree within 2 %).
+The flat values double per ISO stop almost exactly (2.02, 1.99, 1.95, 1.94) while the dark values
+scatter ±15 %: in darks the signal at ISO 1600 is only ~20 DN over 15 s against 12 DN of read noise,
+and the dark variance has an excess over Poisson (RTS / blinking pixels) that biases the slope high.
+With the flat cgain the full well at ISO 100 is 47 ke- (darks: 42; published ~44) and the read noise
+at ISO 1600 2.27 e- (darks: 2.04; published ~2.5).
+
+**Dark current depends on how long the camera has been on.** Per-ISO dark current from the same data
+ranges 0.13–0.79 e-/s, which is physically impossible – sorted by capture time it rises monotonically
+within each session: 0.13 e-/s at a cold start, 0.47 after 25 min, 0.75 after an hour of continuous
+shooting; series taken cold the next morning are back at 0.16–0.22. The model value 0.44 e-/s is a
+session average. Dark current halves per ~6 °C, so without the sensor temperature (or at least the
+time since power-on) it is only known to within a factor of a few – this also explains most of the
+gap to the Z6 II (measured warm after a long series).
 
 Full model:
 
 ![D5100 – model](plots/Nikon_D5100_model.png)
 ![D5100 – input data](plots/Nikon_D5100_input.png)
+![D5100 – flat input data](plots/Nikon_D5100_flat_input.png)
 
 ### ZWO ASI2600MM (−5 °C)
 
@@ -306,11 +361,16 @@ Full model:
 Short subs cost integration time because every frame adds its read noise; dark current costs time
 regardless of sub length. Both relative to an ideal noiseless camera (same optics and QE):
 
-- Dark sky / narrowband (0.03 e-/s/px): the D5100 at ISO 1600 needs 14× the time even with perfect
-  subs (dark current 0.40 e-/s is 13× the sky), the ASI2600 1.06×. With 10 s subs the ASI2600 needs
-  2.3×, the D5100 28×. Neither camera reaches its `t_min` below 60 s (120 s and 97 s).
-- Typical dark sky (0.3 e-/s/px): the D5100 limit is 2.3×, the ASI2600 1.01×; the ASI2600 is within
-  10 % of its limit from ~13 s subs, the D5100 from ~60 s. With 10 s subs: ASI2600 1.1×, D5100 3.7×.
+- Dark sky / narrowband (0.03 e-/s/px): the D5100 at ISO 1600 needs 16× the time even with perfect
+  subs (dark current 0.44 e-/s is 15× the sky), the ASI2600 1.06×. With 10 s subs the ASI2600 needs
+  2.3×, the D5100 33×. Neither camera reaches its `t_min` below 60 s (120 s and 109 s).
+- Typical dark sky (0.3 e-/s/px): the D5100 limit is 2.5×, the ASI2600 1.01×; the ASI2600 is within
+  10 % of its limit from ~13 s subs, the D5100 from ~70 s. With 10 s subs: ASI2600 1.1×, D5100 4.2×.
+- The Z6 II at ISO 800 has a read noise close to the ASI2600 (1.5 vs 0.6 e-), so its `t_min` is short
+  (13–16 s) – but its uncooled dark current of 1.4 e-/s puts the long-sub limit at 5.8× (0.3 e-/s) and
+  49× (0.03 e-/s): sub length cannot fix dark current, only cooling can. Caveat: both DSLRs were
+  measured at unknown, session-dependent sensor temperatures (see D5100 above), and the comparison
+  is per pixel – the Z6 II pixel has 1.55× the area of the D5100's and collects correspondingly more sky.
 
 The 10 % read-noise share (`penalty`) is the usual rule of thumb: it costs 10 % of total time, or ~5 %
 of SNR at equal time. 5 % is a stricter common choice, but it doubles `t_min` – under 0.03 e-/s that
@@ -319,16 +379,31 @@ the read noise saved.
 
 ![Integration time vs sub length](plots/sub_length.png)
 
-### Nikon Z6 II
+### Nikon Z6 II – black-level clamp, dual conversion gain
 
-`sensor_fit` drops ISO < 1600 (photon-transfer slope not significant), but even above that the result
-is physically impossible: cgain 70–1100 DN/e- (expected ~5–40), i.e. a 14-bit full scale of 15 e- at
-ISO 25600 and a read noise of 0.05 e-. Cause: the camera applies a black-level clamp – it subtracts the
-mean dark current measured on shielded reference pixels and adds a constant 1008 DN. The dark mean
-therefore grows ~20× slower than its noise implies (ISO 25600: +42 DN in 15 s, but 216 DN of noise ≈
-19 e- of charge), and photon transfer loses its X axis. The noise itself is fine: uniform across the
-frame, variance ∝ time and ∝ cgain², consistently ~1.2 e-/s of dark current. The D5100 (old design,
-bias 128, no clamp) does not have this problem. From Z6 II darks the reliable quantities are bias, read
-noise in DN (1.6 → 113 DN) and the variance growth rate; cgain needs flats. The model is not in the database.
+From darks alone the Z6 II cannot be characterised: `sensor_fit` drops ISO < 1600 (slope not
+significant) and above that gives an impossible cgain of 70–1100 DN/e-. Cause: the camera applies a
+black-level clamp – it subtracts the mean dark current measured on shielded reference pixels and adds a
+constant 1008 DN. The dark mean therefore grows ~20× slower than its noise implies (ISO 25600: +42 DN
+in 15 s, but 216 DN of noise ≈ 19 e- of charge) and photon transfer loses its X axis. The noise itself
+is fine: uniform across the frame, variance ∝ time and ∝ cgain². The D5100 (old design, bias 128, no
+clamp) does not have this problem.
 
-![Z6 II – input data](plots/Nikon_Z6_2_input.png)
+![Z6 II – dark input data](plots/Nikon_Z6_2_input.png)
+
+With flats (A mode, −4 … +2 EV, `frames2stats.py` with the brightness-drift correction) the photon
+transfer is clean over 65–4000 DN at every ISO and the model follows from `sensor_merge`:
+
+- cgain 0.20 DN/e- at ISO 100, doubling per stop up to 45 DN/e- at 25600 – pure analog gain, no
+  digital-only range like the D5100. Full well 16383 / 0.20 ≈ 80 ke-.
+- **Dual conversion gain at ISO 800**: read noise in DN drops from 6.4 (ISO 640) to 2.2 (ISO 800),
+  in electrons from 7.4 e- (ISO 100) / 4.4 e- (640) to 1.5 e- (800) and ~1.3–1.4 e- above. For
+  astrophotography ISO 800 is the sweet spot: lowest read noise with the most headroom.
+- Dark current 1.4 e-/s/pix from the variance growth (0.6–2.1 across ISO), reproduced in a second
+  session with electronic shutter (1.2–1.3) – 3× the D5100 session average and 800× the cooled
+  ASI2600; under a dark sky it dominates the noise budget (`sensor_compare`: 5.7× the integration time
+  of the ASI2600 at 0.3 e-/s). Measured after a long tethered series with a warm sensor; a mirrorless
+  sensor is powered continuously, so the gap to the D5100 is mostly temperature (see above).
+
+![Z6 II – flat input data](plots/Nikon_Z6_2_flat_input.png)
+![Z6 II – model](plots/Nikon_Z6_2_model.png)

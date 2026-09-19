@@ -90,7 +90,12 @@ with open(stats_file, 'w') as out:
 
             mean = (np.mean(fit1[good]) + np.mean(fit2[good])) / 2
 
-            dsigma = np.std((fit1 - fit2)[good]) / math.sqrt(2)
+            # Flats: the light source may drift between the two frames (Z6 II panel: up to 3 %);
+            # with vignetting that leaves a pattern in the difference and inflates sigma.
+            # Scaling frame 2 to the same mean removes it (residual ~ bias / (bias + signal) of
+            # the drift); for darks the factor is ~1 and nothing changes.
+            scale = np.mean(fit1[good]) / np.mean(fit2[good])
+            dsigma = np.std((fit1 - scale * fit2)[good]) / math.sqrt(2)
 
             print("%s%s" % (file[0], info), file=sys.stderr)
             out.write("%f;%f;%f;%f\n" % (iso, exp, mean, dsigma))
